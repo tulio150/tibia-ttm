@@ -1,0 +1,225 @@
+Tibia Time Machine .ttm:
+
+[2 bytes] Tibia version (>= 700)
+[1 bytes] Server name lenght (< 100)
+> 0: OpenTibia server
+	[x bytes] Server name (a-z, 0-9, [.-_])
+	[2 bytes] Port (> 0)
+[4 bytes] Recording time
+Loop:
+	[2 bytes] Packet size (> 0)
+	[x bytes] Packet data
+	[1 bytes] Next packet type
+	0: Normal packet
+		[2 bytes] Delay to next packet
+	1: New game session (fixed delay of 1000ms)
+	EOF: End of recording
+
+---------------------------------------------------------------------
+TibiCAM .rec:
+
+[1 bytes] TibiCAM version (3: <= 7.6, 4: Unknown, 5: 7.7 <= 7.92 or 6: 8.0 <= 8.22)
+[1 bytes] Format version
+1: Unencrypted (Tibia version < 730)
+	[4 bytes] Number of chunks
+	For:
+		[4 bytes] Received size (> 0)
+		[4 bytes] Received time
+		[x bytes] Received data
+2: Encrypted (Tibia version < 830)
+	[4 bytes] Number of packets + 57
+	For:
+		[2 bytes] Encrypted data size
+		[4 bytes] Received time
+		[x bytes] Encrypted data (Believed to be 2 bytes of packet size + data)
+		[4 bytes] Unknown (Believed to be CRC32 of packet data)
+End of recording
+
+---------------------------------------------------------------------
+TibiaMovie .tmv:
+
+GZip compressed data:
+	[2 bytes] Format version (2 on 0.3.3)
+	[2 bytes] Tibia version (<= 760)
+	[4 bytes] Recording time
+	Loop:
+		[1 bytes] Data type
+		0: Received data chunk
+			[4 bytes] Delay from previous chunk
+			[2 bytes] Received size
+			0: End of recording
+			[x bytes] Received data
+		1: Play marker
+
+---------------------------------------------------------------------
+TibiaCam .cam:
+
+[32 bytes] Hash?
+[4 bytes] Tibia version (X.YZ is 0X 0Y 0Z 00)
+[4 bytes] Metadata size
+[x bytes] Metadata
+[4 bytes] LZMA Compressed data size
+[5 bytes] LZMA Parameters
+[8 bytes] LZMA Decompressed data size
+LZMA Compressed data:
+	[1 bytes] Fake TibiCAM version (6 or 4)
+	[1 bytes] Fake TibiCAM format version (2)
+	[4 bytes] Number of packets + 57
+	For:
+		[2 bytes] Packet size + 2
+		[4 bytes] Received time
+		[2 bytes] Packet size
+		[x bytes] Packet data
+		[4 bytes] CRC32 of packet data
+End of recording
+
+---------------------------------------------------------------------
+TCam .tcam:
+
+GZip compressed data:
+	Loop:
+		[1 bytes] Data type
+		48: XTEA Key
+			[2 bytes] Data size (16)
+			[16 bytes] XTEA key
+		49: Battlelist entry
+			[2 bytes] Data size (160 on 8.22)
+			[x bytes] Battlelist entry (copied from memory)
+			Tibia 8.22 Battlelist entry:
+				[4 bytes] Creature ID
+				[32 bytes] Creature name
+				[12 bytes] Creature position
+				[4 bytes] Screen offset H
+				[4 bytes] Screen offset V
+				[4 bytes] Time to move again straight
+				[4 bytes] Time to move again diagonal
+				[4 bytes] Last Moved H
+				[4 bytes] Last Moved V
+				[4 bytes] Ground speed
+				[4 bytes] Creature walking status
+				[4 bytes] Direction
+				[4 bytes] Last walked direction
+				[8 bytes] Unknown
+				[4 bytes] Creature outfit
+				[4 bytes] Head color
+				[4 bytes] Body color
+				[4 bytes] Legs color
+				[4 bytes] Feet color
+				[4 bytes] Addon
+				[4 bytes] Light level
+				[4 bytes] Light color
+				[4 bytes] Black square
+				[4 bytes] Time to hide black square
+				[4 bytes] HP bar
+				[4 bytes] Walking speed
+				[4 bytes] Visibility
+				[4 bytes] Skull
+				[4 bytes] Party
+				[4 bytes] Guild war
+		50: Delay
+			[2 bytes] Data size (4)
+			[4 bytes] Delay
+		51: Video header
+			[2 bytes] Data size (>= 34)
+			[2 bytes] Tibia version (822)
+			[4 bytes] Recording time
+			[1 bytes] Player name size
+			[x bytes] Player name
+			[1 bytes] Player Vocation (0 for unknown)
+			[2 bytes] Player level
+			[1 bytes] Player magic level
+			[2 bytes] Player level again
+			[1 bytes] Player fist fighting skill
+			[1 bytes] Player club fighting skill
+			[1 bytes] Player sword fighting skill
+			[1 bytes] Player axe fighting skill
+			[1 bytes] Player distance fighting skill
+			[1 bytes] Player shielding skill
+			[1 bytes] Player fishing skill
+			[4 bytes] Monsters seen during recording (0 for uncalculated)
+			[4 bytes] Monsters killed during recording (0 for uncalculated)
+			[2 bytes] Players seen during recording (0 for uncalculated)
+			[2 bytes] Players killed during recording (0 for uncalculated)
+		64: Received data
+			[2 bytes] Data size
+			[x bytes] Received data
+		EOF: End of recording
+[4 bytes] Uncompressed data size
+
+---------------------------------------------------------------------
+BynaCam .byn:
+
+GZip compressed data:
+	Loop:
+		[1 bytes] Data type
+		99: Recorded time
+			[4 bytes] Recorded time
+			End of recording
+		100: Tibia version
+			[4 bytes] Tibia version (08 05 04 00)
+		101: Delay
+			[4 bytes] Delay
+		102: Packet
+			[4 bytes] Packet size
+			[x bytes] Packet data
+
+---------------------------------------------------------------------
+TibiaCast .recording:
+
+DEFLATE compressed data:
+	[2 bytes] TibiaCast version (0x03 0x05)
+	Loop:
+		[4 bytes] Received time
+		[4 bytes] Data size
+		0: End of recording
+		[x bytes] Data
+			[1 bytes] Data type
+			6: Unknown
+				[1 bytes] Constant (1)
+			7: Battlelist + First packets
+				[1 bytes] Number of creatures
+				For:
+					A valid Tibia 0x61 (Add unknown creature) packet, depends on protocol version
+					Used to replace packets 0x62 (Add known creature) and 0x63 (Turn creature) if unkwnown
+				[2 bytes] Number of packets
+				For:
+					[2 bytes] Packet size
+					[2 bytes] Packet data
+			8: Packets
+				[2 bytes] Number of packets
+				For:
+					[2 bytes] Packet size
+					[2 bytes] Packet data
+
+---------------------------------------------------------------------
+Tibia XCAM .xcam:
+
+---------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

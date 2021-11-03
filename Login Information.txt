@@ -1,0 +1,28 @@
+DWORD Unknown; //Base + 0
+union { //Base + 4
+	CHAR Host[16];
+	LPSTR HostPtr;
+}
+DWORD HostLen; //Base + 20 (Host  + 16)
+DWORD Allocated; //Base + 24
+(Version >= 1050) {
+	LPDWORD IPPtr; //Base + 28
+	DWORD Unknown; //Base + 32
+	DWORD Unknown; //Base + 36
+	WORD Port; //Base + 40 (HostLen + 20)
+	WORD Unknwon; //Base + 42
+	DWORD Unknown; //Base + 44
+	//Size = 48
+}
+else {
+	DWORD Unknown; //Base + 28
+	LPDWORD IPPtr; //Base + 32
+	DWORD Unknown; //Base + 36
+	DWORD Unknown; //Base + 40
+	DWORD Unknown; //Base + 44
+	WORD Port; //Base + 48 (HostLen + 28)
+	WORD Unknwown; //Base + 50
+	DWORD Unknown; //Base + 52
+	//Size = 56
+}
+//End = Port + 8

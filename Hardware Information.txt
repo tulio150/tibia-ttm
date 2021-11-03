@@ -1,0 +1,51 @@
+47 Bytes total
+
+[1 byte ] = locale ID (0x2C)
+[3 bytes] = locale string (USA)
+[2 bytes] = amount of RAM, in MB (8190)
+[6 bytes] unknown (04 5E 08 40 10 00)
+[9 bytes] = CPU string, padded with zeros ("9650" 00 00 00 00 00)
+[2 bytes] unknown (11 44) (seems to be always it)
+[2 bytes] = CPU frequence, in MHz (2310)
+[2 bytes] = CPU frequence, in MHz (2310) (yes, it repeats, but may vary a little)
+[4 bytes] unknown (22 00 00 00)
+[9 bytes] = Video card string, padded with zeros ("4800 SERI")
+[2 bytes] = VRAM, in MB (1024)
+[2 bytes] = Horizontal screen resolution, in px (1920)
+[2 bytes] = Vertical screen resolution, in px (1080)
+[1 byte ] = Monitor refresh rate, in Hz (60)
+
+MINE:
+
+Locale ID: 0x13
+Locale: BRA
+
+RAM: 2047 MB
+
+CPU: QUAD Q660
+Frequency: 2398/2399 Mhz
+
+GPU: GTS 250
+VRAM: 1024 MB
+Resolution: 1280x1024 px
+Refresh: 60 Hz
+
+Unknown values:
+
+[03	][26	][10	][08	][00	][00	] hex
+[3	][38	][16	][8	][0	][0	]
+[3	][4134		][8	][0		]
+[3	][528422		][0		]
+[9731		][2064		][0		]
+[1058307		][8	][0		]
+[135276035			][0		]
+
+
+
+[11	][44	] hex
+[17	][68	]
+[17425		]
+
+[80	][40	][00	][00	] hex
+[128	][64	][0		]
+[16512		][0		]

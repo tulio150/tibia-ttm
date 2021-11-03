@@ -1,0 +1,64 @@
+#include "version.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION RES_VERSION
+PRODUCTVERSION RES_VERSION
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS VS_FF_DEBUG
+#else
+FILEFLAGS 0
+#endif
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+{
+	BLOCK "StringFileInfo"
+	{
+		BLOCK "040904E4"
+		{
+			VALUE "FileVersion", STR_VERSION
+			VALUE "Comments", "Tibia movie recorder and player"
+			VALUE "FileDescription", "Tibia Time Machine " STR_VERSION
+			VALUE "LegalCopyright", "©" DEV_YEAR " tulio150 at " SITE_URL
+			VALUE "CompanyName", "www." SITE_URL
+		}
+	}
+
+	BLOCK "VarFileInfo"
+	{
+		VALUE "Translation", 0x0409 1252
+	}
+}
+
+LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION RES_VERSION
+PRODUCTVERSION RES_VERSION
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS VS_FF_DEBUG
+#else
+FILEFLAGS 0
+#endif
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+{
+	BLOCK "StringFileInfo"
+	{
+		BLOCK "041604E4"
+		{
+			VALUE "FileVersion", STR_VERSION
+			VALUE "Comments", "Um programa para gravar e assistir vídeos do Tibia"
+			VALUE "FileDescription", "Tibia Time Machine " STR_VERSION
+			VALUE "LegalCopyright", "©" DEV_YEAR " tulio150 de " SITE_URL
+			VALUE "CompanyName", "www." SITE_URL
+		}
+	}
+
+	BLOCK "VarFileInfo"
+	{
+		VALUE "Translation", 0x0416 1252
+	}
+}

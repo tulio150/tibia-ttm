@@ -1,0 +1,24 @@
+2 bytes = tibia version
+	< 700 fail
+	> 9999 fail
+1 byte = hostname lenght
+	= 0 global tibia
+	< 100 valid
+		[hostname lenght] bytes = hostname
+			verify(a-z, 0-9, [.-_]) else fail
+		2 bytes = port
+			= 0 fail
+	else fail
+4 bytes = total playing time
+mark login
+until end video
+	2 bytes = packet size
+		= 0 fail
+	[packet size] bytes = packet data
+		is_login() != find_self_appear() fail
+	1 byte = action
+		eof end video
+		= 0 delay
+			2 bytes = delay
+		= 1 delay 1s and mark login
+		else fail

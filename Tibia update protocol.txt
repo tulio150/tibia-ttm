@@ -1,0 +1,70 @@
+Informaton about how Tibia updates itself
+by tulio150 - tpforums.org
+
+Thanks to:
+Tibia's own debug assertions
+Tibia Time Machine
+
+This could be used to:
+-One could make a mirror server when Tibia is updating, because cipsoft's always get down
+-A server which you can download any Tibia version using the client
+(Ex: login with acc tibia861 to replace your client with Tibia 8.61)
+-OTServer: login with a certain acc/pass to download a custom client
+-OTServer: custom graphics for each account (rank system, premmy/free, gm)
+-OTServer: real updates
+-Custom clients: get Tibia dat/pic/spr on-the-fly
+
+Bad things people can do with this knowledge:
+-Sending a new patcher followed by a dummy patch to make Tibia launch a virus
+-Enforcing a custom client
+-Update player's graphics without his knowledge
+
+To-do:
+Where Tibia stores the downloaded data
+How the patching works after everything is downloaded
+Patch file format
+
+-------------------------------
+
+ID 0x1E = Patch
+ID 0X1F = Whole file
+[1 byte ] Patch type
+[4 bytes] Data size
+
+Patch types:
+0 = Tibia.exe (program version)
+1 = Tibia.dat (object data)
+2 = Tibia.spr (object graphics)
+3 = Tibia.pic (pictures)
+4 = Patcher.exe (patcher) (0x1F only)
+5 = linux showerror file (??)
+
+--------------------------------
+
+ID 0x20 = Update data
+[2 bytes] Block size
+[x bytes] Block
+
+Obs: Tibia server sends blocks of 10kb (10240 bytes) at a time
+
+--------------------------------
+
+1E / 1F records
+
+Update 8.71:
+
+8.70:
+1F 00 00 20 25 00 // 0x252000 = 8.71 Tibia.exe size
+8.62:
+1E 01 D2 AE 00 00 // Don't know how to handle these patches
+1E 02 6C 66 5F 00
+1E 03 D1 EB 01 00
+1F 00 00 20 25 00
+8.61:
+1E 01 D2 AE 00 00
+1E 02 6C 66 5F 00
+1E 03 95 EE 01 00
+1F 00 00 20 25 00
+8.60: server rejects connection
+
+~~to be continued~~
