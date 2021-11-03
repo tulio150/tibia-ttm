@@ -1,4 +1,0 @@
-LIBRARY "Tibia Time Machine.exe"
-EXPORTS
-	StartHook
-	EndHook
