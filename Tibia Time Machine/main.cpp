@@ -800,7 +800,7 @@ namespace MainWnd {
 		case IDPROXY: return OnProxy(), 0;
 		case IDREGISTER: return OnRegister(), 0;
 		case IDAUTOPLAY: return OnAutoPlay(), 0;
-		case IDDONATE: return ShellExecute(MainWnd::Handle, NULL, _T("https://tippin.me/@tulio150"), NULL, NULL, SW_SHOW), 0;
+		case IDDONATE: return ShellExecute(MainWnd::Handle, NULL, _T("https://zbd.gg/tulio150"), NULL, NULL, SW_SHOW), 0;
 		case IDVERSION: return Tibia::Flash(), 0;
 		} return 0;
 		case WM_TIMER: switch (GET_WM_TIMER_ID(Wp, Lp)) {
