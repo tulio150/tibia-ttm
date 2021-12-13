@@ -644,7 +644,7 @@ namespace Video {
 			LPCSTR Host = NULL;
 			WORD Port = PORT;
 			{
-				LPBYTE Hash = File.Skip(32);
+				LPBYTE Hash = File.Skip(32); //No other recorder uses this as a real hash
 				if (!Hash) {
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -682,7 +682,7 @@ namespace Video {
 				return Error;
 			}
 		}
-		if (!File.LZMA_Decompress()) {
+		if (!File.LZMA_Decompress()) { //some recorders give corrupted LZMA data and still work, so we ignore early EOF (TibiaLive)
 			return ERROR_CORRUPT_VIDEO;
 		}
 		{
@@ -719,7 +719,7 @@ namespace Video {
 				if (Size) {
 					Src.Avail = Size;
 					if (!Src.Read(Data)) {
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+						return ERROR_CORRUPT_VIDEO;
 					}
 				}
 				MainWnd::Progress_Set(i, Packets);
@@ -727,7 +727,7 @@ namespace Video {
 			if (!Src.First()) {
 				return ERROR_CORRUPT_VIDEO;
 			}
-			// if (File.Skip(1)) ignore trash after the video data, sometimes added by some recorders
+			// if (File.Skip(1)) ignore trash after the video data, added by some recorders
 		}
 		AfterOpen(Override);
 		return NULL;
@@ -863,7 +863,7 @@ namespace Video {
 					}
 					Src.Avail = Size;
 					if (!Src.Read(Data)) {
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+						return ERROR_CORRUPT_VIDEO;
 					}
 					MainWnd::Progress_Set(i, Packets);
 				}

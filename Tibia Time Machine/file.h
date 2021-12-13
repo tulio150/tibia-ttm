@@ -221,13 +221,12 @@ public:
 							Data = new(std::nothrow) BYTE[UncompressedSize];
 							if (Data) {
 								DWORD TotalUncompressed = UncompressedSize, TotalCompressed = CompressedSize;
-								if (!LzmaUncompress(Data, &TotalUncompressed, Compressed, &TotalCompressed, Props, 5)) {
-									if (TotalUncompressed == UncompressedSize && TotalCompressed == CompressedSize) {
-										delete[] Ptr;
-										Ptr = Data;
-										End = Data + UncompressedSize;
-										return UncompressedSize;
-									}
+								INT Result = LzmaUncompress(Data, &TotalUncompressed, Compressed, &TotalCompressed, Props, 5);
+								if ((!Result || Result == 6) && TotalUncompressed <= UncompressedSize && TotalCompressed <= CompressedSize) {
+									delete[] Ptr;
+									Ptr = Data;
+									End = Data + TotalUncompressed;
+									return TotalUncompressed;
 								}
 								delete[] Data;
 							}
