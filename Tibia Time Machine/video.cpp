@@ -727,10 +727,7 @@ namespace Video {
 			if (!Src.First()) {
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (File.Skip(1)) {
-				CancelOpen();
-				return ERROR_CORRUPT_VIDEO;
-			}
+			// if (File.Skip(1)) ignore trash after the video data, sometimes added by some recorders
 		}
 		AfterOpen(Override);
 		return NULL;
