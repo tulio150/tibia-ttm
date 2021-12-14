@@ -1,6 +1,24 @@
 #pragma once
 #include "framework.h"
 
+#define SZ_OK 0
+
+#define SZ_ERROR_DATA 1
+#define SZ_ERROR_MEM 2
+#define SZ_ERROR_CRC 3
+#define SZ_ERROR_UNSUPPORTED 4
+#define SZ_ERROR_PARAM 5
+#define SZ_ERROR_INPUT_EOF 6
+#define SZ_ERROR_OUTPUT_EOF 7
+#define SZ_ERROR_READ 8
+#define SZ_ERROR_WRITE 9
+#define SZ_ERROR_PROGRESS 10
+#define SZ_ERROR_FAIL 11
+#define SZ_ERROR_THREAD 12
+
+#define SZ_ERROR_ARCHIVE 16
+#define SZ_ERROR_NO_ARCHIVE 17
+
 extern "C" {
 	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD* PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT numThreads);
 	/* *PropsSize must be = 5
@@ -222,7 +240,7 @@ public:
 							if (Data) {
 								DWORD TotalUncompressed = UncompressedSize, TotalCompressed = CompressedSize;
 								INT Result = LzmaUncompress(Data, &TotalUncompressed, Compressed, &TotalCompressed, Props, 5);
-								if ((!Result || Result == 6) && TotalUncompressed <= UncompressedSize && TotalCompressed <= CompressedSize) {
+								if ((!Result || Result == SZ_ERROR_INPUT_EOF) && TotalUncompressed <= UncompressedSize && TotalCompressed <= CompressedSize) {
 									delete[] Ptr;
 									Ptr = Data;
 									End = Data + TotalUncompressed;

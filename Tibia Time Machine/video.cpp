@@ -263,33 +263,33 @@ namespace Video {
 	VOID AfterOpen(BOOL Override) {
 		Current->EndSession();
 		if (Last) {
-			Override = TRUE;
 			INT NewSession = ListBox_GetCount(MainWnd::ListSessions);
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			while (Current = Last->Next) {
 				ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
 				Last = CurrentLogin->Last;
 			}
-			ListBox_SetCurSel(MainWnd::ListSessions, NewSession);
 			SetWindowRedraw(MainWnd::ListSessions, TRUE);
+			ListBox_SetCurSel(MainWnd::ListSessions, NewSession);
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
+			Changed = TRUE;
 		}
 		else {
 			Last = Current;
 			Tibia::OpenVersionMenu();
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			FillSessionList();
-			ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			SetWindowRedraw(MainWnd::ListSessions, TRUE);
+			ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			TCHAR LabelString[40];
 			LoadString(NULL, LABEL_TOTAL_TIME, LabelString, 40);
 			Static_SetText(MainWnd::LabelTime, LabelString);
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 			LoadString(NULL, BUTTON_SAVE, LabelString, 40);
 			Button_SetText(MainWnd::ButtonSub, LabelString);
+			Changed = Override;
 		}
 		LastTimeChanged();
-		Changed = Override;
 	}
 
 	struct VideoPacket : protected NeedParser, PacketBase {
@@ -575,11 +575,26 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			Size += 10 + PacketSize;
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		BufferedFile Encoder;
 		if (!Encoder.LZMA_Start(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
+		Encoder.WriteByte(GetRECVersion()); //Ignored by all players
+		Encoder.WriteByte(2); // Ignored by all players, 2 means encrypted format, but without encryption
+		Encoder.WriteDword(Packets);
+		Current = Login;
+		do {
+			PacketData* Packet = Parser->GetPacketData(*Current);
+			PacketSize = Packet->RawSize();
+			Encoder.WriteWord(PacketSize);
+			Encoder.WriteDword(Current->Time);
+			Encoder.Write(Packet, PacketSize);
+			Encoder.WriteDword(0); // Checksum is ignored by most players, algorithm is erratic and unknown
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		} while (Current = Current->Next);
+		MainWnd::Progress_Start();
 		WritingFile File;
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -612,20 +627,6 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
-		Encoder.WriteByte(GetRECVersion()); //Ignored by all players
-		Encoder.WriteByte(2); // Ignored by all players, 2 means encrypted format, but without encryption
-		Encoder.WriteDword(Packets);
-		Current = Login;
-		do {
-			PacketData *Packet = Parser->GetPacketData(*Current);
-			PacketSize = Packet->RawSize();
-			Encoder.WriteWord(PacketSize);
-			Encoder.WriteDword(Current->Time);
-			Encoder.Write(Packet, PacketSize);
-			Encoder.WriteDword(0); // Checksum is ignored by most players, algorithm is erratic and unknown
-			MainWnd::Progress_Set(Current->Time, Last->Time);
-		} while (Current = Current->Next);
-		MainWnd::Progress_Start();
 		if (!Encoder.LZMA_Compress(File)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -638,96 +639,87 @@ namespace Video {
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		{
-			WORD Version;
-			BYTE HostLen = NULL;
-			LPCSTR Host = NULL;
-			WORD Port = PORT;
-			{
-				LPBYTE Hash = File.Skip(32); //No other recorder uses this as a real hash
-				if (!Hash) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				LPBYTE VersionPart = File.Skip(4);
-				if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-				DWORD Metadata;
-				if (!File.ReadDword(Metadata)) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (Metadata) {
-					if (!DiffMemory(Hash, CAM_HASH, 32)) { //Our little mod to allow otserver info
-						if (Metadata < 4 || Metadata > 131) {
-							return ERROR_CORRUPT_VIDEO;
-						}
-						if (!File.ReadByte(HostLen) || HostLen != Metadata - 3) {
-							return ERROR_CORRUPT_VIDEO;
-						}
-						Host = LPCSTR(File.Skip(HostLen));
-						if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
-							return ERROR_CORRUPT_VIDEO;
-						}
-						if (!File.ReadWord(Port) || !Port) {
-							return ERROR_CORRUPT_VIDEO;
-						}
-					}
-					else if (!File.Skip(Metadata)) {
-						return ERROR_CORRUPT_VIDEO;
-					}
-				}
-			}
-			if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
-				return Error;
-			}
-		}
-		if (!File.LZMA_Decompress()) { //some recorders give corrupted LZMA data and still work, so we ignore early EOF (TibiaLive)
+		WORD Version;
+		LPBYTE Hash = File.Skip(32); //No other recorder uses this as a real hash
+		if (!Hash) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		{
-			BYTE Version;
-			if (!File.ReadByte(Version)) { // fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
-				return ERROR_CORRUPT_VIDEO;
+		LPBYTE VersionPart = File.Skip(4);
+		if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+		BYTE HostLen = NULL;
+		LPCSTR Host = NULL;
+		WORD Port = PORT;
+		DWORD Metadata;
+		if (!File.ReadDword(Metadata)) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		if (Metadata) {
+			if (!DiffMemory(Hash, CAM_HASH, 32)) { //Our little mod to allow otserver info
+				if (Metadata < 4 || Metadata > 131) {
+					return ERROR_CORRUPT_VIDEO;
+				}
+				if (!File.ReadByte(HostLen) || HostLen != Metadata - 3) {
+					return ERROR_CORRUPT_VIDEO;
+				}
+				Host = LPCSTR(File.Skip(HostLen));
+				if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
+					return ERROR_CORRUPT_VIDEO;
+				}
+				if (!File.ReadWord(Port) || !Port) {
+					return ERROR_CORRUPT_VIDEO;
+				}
 			}
-			if (!File.ReadByte(Version) || Version != 2) { // all CAMs use encrypted flag, but without encryption
+			else if (!File.Skip(Metadata)) {
 				return ERROR_CORRUPT_VIDEO;
 			}
 		}
-		{
-			DWORD Packets;
-			if (!File.ReadDword(Packets) || Packets < 58) {
+		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
+			return Error;
+		}
+		if (!File.LZMA_Decompress()) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		BYTE RecVersion;
+		if (!File.ReadByte(RecVersion)) { // fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+			return ERROR_CORRUPT_VIDEO;
+		}
+		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // all CAMs use encrypted flag, but without encryption
+			return ERROR_CORRUPT_VIDEO;
+		}
+		DWORD Packets;
+		if (!File.ReadDword(Packets) || Packets < 58) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		Packets -= 57;
+		Converter Src;
+		for (DWORD i = 0; i < Packets; i++) {
+			WORD Size;
+			if (!File.ReadWord(Size)) {
+				CancelOpen();
 				return ERROR_CORRUPT_VIDEO;
 			}
-			Packets -= 57;
-			Converter Src;
-			for (DWORD i = 0; i < Packets; i++) {
-				WORD Size;
-				if (!File.ReadWord(Size)) {
-					CancelOpen();
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.ReadDword(Src.Time)) {
-					CancelOpen();
-					return ERROR_CORRUPT_VIDEO;
-				}
-				LPBYTE Data = File.Skip(Size + 4); // ignore checksum, unknown algorithm, bynacam uses crc32 of wrong data
-				if (!Data) {
-					CancelOpen();
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (Size) {
-					Src.Avail = Size;
-					if (!Src.Read(Data)) {
-						return ERROR_CORRUPT_VIDEO;
-					}
-				}
-				MainWnd::Progress_Set(i, Packets);
-			}
-			if (!Src.First()) {
+			if (!File.ReadDword(Src.Time)) {
+				CancelOpen();
 				return ERROR_CORRUPT_VIDEO;
 			}
-			// if (File.Skip(1)) ignore trash after the video data, added by some recorders
+			LPBYTE Data = File.Skip(Size + 4); // ignore checksum, unknown algorithm, bynacam uses crc32 of wrong data
+			if (!Data) {
+				CancelOpen();
+				return ERROR_CORRUPT_VIDEO;
+			}
+			if (Size) {
+				Src.Avail = Size;
+				if (!Src.Read(Data)) {
+					return ERROR_CORRUPT_VIDEO;
+				}
+			}
+			MainWnd::Progress_Set(i, Packets);
+		}
+		if (!Src.First()) {
+			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
 		return NULL;
@@ -889,17 +881,13 @@ namespace Video {
 						return ERROR_CORRUPT_VIDEO;
 					}
 					if (!Src.Read(Data)) {
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+						return ERROR_CORRUPT_VIDEO;
 					}
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
 		}
 		if (!Src.First()) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (File.Skip(1)) {
-			CancelOpen();
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(TRUE);
