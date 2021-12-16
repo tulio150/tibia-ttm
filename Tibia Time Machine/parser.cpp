@@ -2,6 +2,7 @@
 #include "tibia.h"
 #include "proxy.h"
 #include "video.h"
+#include "bigword.h"
 
 Parser700 *Parser;
 

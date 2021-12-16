@@ -4,6 +4,7 @@
 #include "proxy.h"
 #include "parser.h"
 #include "loader.h"
+#include "bigword.h"
 
 namespace MainWnd {
 	UINT TaskbarRestart;
@@ -599,6 +600,15 @@ namespace MainWnd {
 		}
 	}
 
+	VOID OnDonate() { // URL is encrypted to prevent simple hex editing of the link (private key not on the sources)
+		CONST DWORD Key[32] = { 0x000C9FF3, 0xB2CAE6D3, 0x2B6D07FE, 0xA50FBDBA, 0x4D2D8C2D, 0xCFDA29A9, 0x62BA50AF, 0x322AEAE7, 0xFFA36F9E, 0x3591DBD0, 0xB54E463F, 0xBF15D339, 0x56C43F41, 0x039F0517, 0xC5773B19, 0x2CFD7A48, 0x76130D67, 0x9009E548, 0xA8460126, 0xC9DBD96A, 0xEC1C5BD1, 0xD6A0A8A6, 0x7E52C551, 0x70308F38, 0x63378CAD, 0xA0099890, 0x1F16A4B2, 0x79988E87, 0x2CBBB348, 0xBB581867, 0xE201A67B, 0x04E9E63E };
+		DWORD Link[32] = { 0x9E9FF103, 0x47D087EF, 0x3C217C1D, 0x27D628EC, 0x6CE38F04, 0x8DF0EC9E, 0x4A0791E0, 0xC33B0C06, 0x0A7C13D8, 0x022F4377, 0x6ECE2745, 0x10EE64F4, 0xE01E4D2A, 0xF7405050, 0xF0278521, 0xF694C4BF, 0x37B0AD90, 0xF4CE700B, 0x33F6BBCC, 0xC6FAE867, 0x793E3866, 0x284B5B7F, 0x7960C698, 0xF5AE3C76, 0xD0C76181, 0x315FF5F0, 0x0FEB8461, 0x5A4F2693, 0xE91AF839, 0x817A8AB3, 0x8A195F61, 0xCC79EA40 };
+		BIGWORD Rsa(LPBYTE(Link), 32);
+		Rsa.PowMod(65537, Key, 32);
+		Rsa.Export(LPBYTE(Link), 32);
+		ShellExecuteA(MainWnd::Handle, NULL, LPCSTR(Link) + 1, NULL, NULL, SW_SHOW);
+	}
+
 	VOID OnLoginClientConnect() {
 		if (Proxy::State) {
 			Proxy::Login.Reject();
@@ -800,7 +810,7 @@ namespace MainWnd {
 		case IDPROXY: return OnProxy(), 0;
 		case IDREGISTER: return OnRegister(), 0;
 		case IDAUTOPLAY: return OnAutoPlay(), 0;
-		case IDDONATE: return ShellExecute(MainWnd::Handle, NULL, _T("https://zbd.gg/tulio150"), NULL, NULL, SW_SHOW), 0;
+		case IDDONATE: return OnDonate(), 0;
 		case IDVERSION: return Tibia::Flash(), 0;
 		} return 0;
 		case WM_TIMER: switch (GET_WM_TIMER_ID(Wp, Lp)) {

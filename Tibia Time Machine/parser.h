@@ -3,7 +3,6 @@
 #include "file.h"
 #include "packet.h"
 #include "packetstring.h"
-#include "bigword.h"
 
 #define ID_LOGIN_INFO 0x0B
 #define ID_LOGIN_ERROR Tibia::Version >= 1076 ? 0x0B : 0x0A
