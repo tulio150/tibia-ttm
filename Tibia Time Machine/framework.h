@@ -23,6 +23,8 @@
 #include <windowsx.h>
 #include <new.h>
 
+typedef unsigned __int64 QWORD;
+
 //infinite loop
 #define ever ;;
 

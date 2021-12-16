@@ -24,6 +24,12 @@ namespace Video {
 	TCHAR FileName[MAX_PATH] = _T("");
 	BYTE Changed = FALSE;
 
+	DWORD PlayedTime;
+	INT Speed = 0;
+	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512") };
+
+	CONST BYTE RecKey[32] = { 0x1C, 0x55, 0xDB, 0x29, 0x08, 0x81, 0xC1, 0x98, 0x37, 0x74, 0x2F, 0xE6, 0x25, 0x9B, 0xE1, 0x36, 0xE6, 0x80, 0x3A, 0x8A, 0x94, 0x02, 0xCB, 0x75, 0xB4, 0x1F, 0xCF, 0x2C, 0xC7, 0x1E, 0x15, 0x53 }; // "Thy key is mine © 2006 GB Monaco"
+
 #define CurrentLogin ((Session *) Current)
 
 	VOID Packet::EndSession()  {
@@ -57,10 +63,6 @@ namespace Video {
 		}
 		return TRUE;
 	}
-
-	DWORD PlayedTime;
-	INT Speed = 0;
-	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512")};
 
 	namespace Timer {
 		DWORD Last;
@@ -377,12 +379,10 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		VideoPacket Src;
-		if (!Src.Read(File)) {
+		if (!Src.Read(File) || !Parser->PlayerData) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!Parser->PlayerData) {
-			return ERROR_CORRUPT_VIDEO;
-		}
+
 		if (!Parser->EnterGame) {//videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
 			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) {
 				return ERROR_CORRUPT_VIDEO;
@@ -457,7 +457,6 @@ namespace Video {
 		WORD Want;
 		WORD PacketSize;
 	public:
-		DWORD Avail;
 		DWORD Time;
 
 		Converter(): Store(LPBYTE(&PacketSize)), Want(2) {
@@ -469,7 +468,7 @@ namespace Video {
 		Packet *First() {
 			return Last ? Last->Next : Login;
 		}
-		BOOL Read(LPBYTE Data) {
+		BOOL Read(LPBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
 				Data += Want;
@@ -538,7 +537,7 @@ namespace Video {
 						Current->Record(*this);
 					}
 					else {
-						return FALSE; //common packet without a login packet first
+						return FALSE; //common packet without a login packet first (usually wrong version selected)
 					}
 					LastTime = Time;
 					Store = LPBYTE(&PacketSize);
@@ -558,43 +557,11 @@ namespace Video {
 		return Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : 3;
 	}
 
+	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) {
+		MainWnd::Progress_Set(DecSize, TotalSize);
+		return 0;
+	}
 	UINT SaveCAM() {
-		NeedParser ToSave;
-		DWORD Packets = 58;
-		DWORD PacketSize = Parser->GetPacketData(*Login)->RawSize();
-		if (PacketSize > 0xFFFF) {
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		DWORD Size = 16 + PacketSize;
-		for (Current = Login; Current = Current->Next; Packets++) {
-			if (Packets == INFINITE) {
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			PacketSize = Parser->GetPacketData(*Current)->RawSize();
-			if (PacketSize > 0xFFFF || PacketSize + 10 > 0x7FFFFFFF - Size) {
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			Size += 10 + PacketSize;
-			MainWnd::Progress_Set(Current->Time, Last->Time);
-		}
-		BufferedFile Encoder;
-		if (!Encoder.LZMA_Start(Size)) {
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		Encoder.WriteByte(GetRECVersion()); //Ignored by all players
-		Encoder.WriteByte(2); // Ignored by all players, 2 means encrypted format, but without encryption
-		Encoder.WriteDword(Packets);
-		Current = Login;
-		do {
-			PacketData* Packet = Parser->GetPacketData(*Current);
-			PacketSize = Packet->RawSize();
-			Encoder.WriteWord(PacketSize);
-			Encoder.WriteDword(Current->Time);
-			Encoder.Write(Packet, PacketSize);
-			Encoder.WriteDword(0); // Checksum is ignored by most players, algorithm is erratic and unknown
-			MainWnd::Progress_Set(Current->Time, Last->Time);
-		} while (Current = Current->Next);
-		MainWnd::Progress_Start();
 		WritingFile File;
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -603,7 +570,7 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (Tibia::HostLen) { //Our little mod to allow otserver info, no player checks the hash
+		if (Tibia::HostLen) { //Our little mod to allow otserver info, no other player checks the hash
 			if (!File.WriteDword(Tibia::HostLen + 3)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -627,7 +594,47 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
-		if (!Encoder.LZMA_Compress(File)) {
+		NeedParser ToSave;
+		DWORD Packets = 58;
+		DWORD PacketSize = Parser->GetPacketData(*Login)->RawSize();
+		if (PacketSize > 0xFFFF) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		DWORD Size = 16 + PacketSize;
+		for (Current = Login; Current = Current->Next; Packets++) {
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+			if (Packets == INFINITE) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			PacketSize = Parser->GetPacketData(*Current)->RawSize();
+			if (PacketSize > 0xFFFF || PacketSize + 10 > 0x7FFFFFFF - Size) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			Size += 10 + PacketSize;
+		}
+		BufferedFile Encoder;
+		if (!Encoder.LZMA_Start(Size)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		Encoder.WriteByte(GetRECVersion()); //Ignored by all players
+		Encoder.WriteByte(2); // Ignored by all players, 2 means encrypted format, but without encryption
+		Encoder.WriteDword(Packets);
+		Current = Login;
+		do {
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+			PacketData* Packet = Parser->GetPacketData(*Current);
+			PacketSize = Packet->RawSize();
+			Encoder.WriteWord(PacketSize);
+			Encoder.WriteDword(Current->Time);
+			Encoder.Write(Packet, PacketSize);
+			Encoder.WriteDword(0xFAFAFAFA); // Checksum is ignored, repetitive pattern compresses to a smaller video
+		} while (Current = Current->Next);
+		MainWnd::Progress_Start();
+		if (!Encoder.LZMA_Compress(File, LZMA_Callback)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -640,7 +647,7 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
-		LPBYTE Hash = File.Skip(32); //No other recorder uses this as a real hash
+		LPBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
 		if (!Hash) {
 			return ERROR_CORRUPT_VIDEO;
 		}
@@ -657,7 +664,7 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (Metadata) {
-			if (!DiffMemory(Hash, CAM_HASH, 32)) { //Our little mod to allow otserver info
+			if (!DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
 				if (Metadata < 4 || Metadata > 131) {
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -696,6 +703,7 @@ namespace Video {
 		Packets -= 57;
 		Converter Src;
 		for (DWORD i = 0; i < Packets; i++) {
+			MainWnd::Progress_Set(i, Packets);
 			WORD Size;
 			if (!File.ReadWord(Size)) {
 				CancelOpen();
@@ -705,18 +713,14 @@ namespace Video {
 				CancelOpen();
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPBYTE Data = File.Skip(Size + 4); // ignore checksum, unknown algorithm, bynacam uses crc32 of wrong data
+			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it
 			if (!Data) {
 				CancelOpen();
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (Size) {
-				Src.Avail = Size;
-				if (!Src.Read(Data)) {
-					return ERROR_CORRUPT_VIDEO;
-				}
+			if (!Src.Read(Data, Size)) {
+				return ERROR_CORRUPT_VIDEO;
 			}
-			MainWnd::Progress_Set(i, Packets);
 		}
 		if (!Src.First()) {
 			return ERROR_CORRUPT_VIDEO;
@@ -740,6 +744,7 @@ namespace Video {
 		}
 		DWORD Packets = 1;
 		for (Current = Login; Current = Current->Next; Packets++) {
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 			if (Packets == INFINITE) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -752,6 +757,7 @@ namespace Video {
 		NeedParser ToSave;
 		Current = Login;
 		do {
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			DWORD PacketSize = Packet->RawSize();
 			if (!File.WriteDword(PacketSize)) {
@@ -766,7 +772,6 @@ namespace Video {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		Changed = FALSE;
 		return NULL;
@@ -811,8 +816,9 @@ namespace Video {
 			Packets -= 57;
 			DWORD Mod = Version < 4 ? 5 : Version < 6 ? 8 : 6;
 			for (DWORD i = 0; i < Packets; i++) {
+				MainWnd::Progress_Set(i, Packets);
 				WORD Size;
-				if (!File.ReadWord(Size) || (Version > 4 && Size & 0xF)) {
+				if (!File.ReadWord(Size)) {
 					CancelOpen();
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -820,44 +826,35 @@ namespace Video {
 					CancelOpen();
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Size) {
-					if (!File.ReadDword(Src.Avail) || Src.Avail != 1) {
+				LPBYTE Data = File.Skip(Size);
+				if (!Data) {
+					CancelOpen();
+					return ERROR_CORRUPT_VIDEO;
+				}
+				DWORD Checksum;
+				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) {
+					CancelOpen();
+					return ERROR_CORRUPT_VIDEO;
+				}
+				BYTE Key = Size + Src.Time + 2;
+				for (WORD i = 0; i < Size; i++) {
+					CHAR Minus = Key + 33 * i;
+					if (Minus < 0) {
+						while (-Minus % Mod) Minus++;
+					}
+					else {
+						while (Minus % Mod) Minus++;
+					}
+					Data[i] -= Minus;
+				}
+				if (Version > 4 && Size) {
+					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) {
 						CancelOpen();
 						return ERROR_CORRUPT_VIDEO;
 					}
 				}
-				else {
-					LPBYTE Data = File.Skip(Size);
-					if (!Data) {
-						CancelOpen();
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!File.ReadDword(Src.Avail) || Src.Avail != Adler32(Data, Data + Size)) {
-						CancelOpen();
-						return ERROR_CORRUPT_VIDEO;
-					}
-					BYTE Key = Size + Src.Time + 2;
-					for (WORD i = 0; i < Size; i++) {
-						CHAR Minus = Key + 33 * i;
-						if (Minus < 0) {
-							while (-Minus % Mod) Minus++;
-						}
-						else {
-							while (Minus % Mod) Minus++;
-						}
-						Data[i] -= Minus;
-					}
-					if (Version > 4) {
-						if (!(Size = Aes256::decrypt(LPBYTE("Thy key is mine © 2006 GB Monaco"), Data, Size))) {
-							CancelOpen();
-							return ERROR_CORRUPT_VIDEO;
-						}
-					}
-					Src.Avail = Size;
-					if (!Src.Read(Data)) {
-						return ERROR_CORRUPT_VIDEO;
-					}
-					MainWnd::Progress_Set(i, Packets);
+				if (!Src.Read(Data, Size)) {
+					return ERROR_CORRUPT_VIDEO;
 				}
 			}
 		}
@@ -866,7 +863,9 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			for (DWORD i = 0; i < Packets; i++) {
-				if (!File.ReadDword(Src.Avail)) {
+				MainWnd::Progress_Set(i, Packets);
+				DWORD Size;
+				if (!File.ReadDword(Size)) {
 					CancelOpen();
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -874,17 +873,14 @@ namespace Video {
 					CancelOpen();
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (Src.Avail) {
-					LPBYTE Data = File.Skip(Src.Avail);
-					if (!Data) {
-						CancelOpen();
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Read(Data)) {
-						return ERROR_CORRUPT_VIDEO;
-					}
+				LPBYTE Data = File.Skip(Size);
+				if (!Data) {
+					CancelOpen();
+					return ERROR_CORRUPT_VIDEO;
 				}
-				MainWnd::Progress_Set(i, Packets);
+				if (!Src.Read(Data, Size)) {
+					return ERROR_CORRUPT_VIDEO;
+				}
 			}
 		}
 		if (!Src.First()) {

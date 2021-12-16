@@ -19,8 +19,8 @@
 #define SZ_ERROR_ARCHIVE 16
 #define SZ_ERROR_NO_ARCHIVE 17
 
-extern "C" {
-	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD* PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT numThreads);
+extern "C" { // Modded LzmaLib for compression progress
+	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD* PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPVOID Callback);
 	/* *PropsSize must be = 5
 	0 <= Level <= 9, default = 5
 	DictSize = 0, default to (1 << 24)
@@ -205,12 +205,12 @@ public:
 	LPBYTE LZMA_Start(CONST DWORD Size) {
 		return Start(Size * 2);
 	}
-	BOOL LZMA_Compress(CONST WritingFile& File) {
+	BOOL LZMA_Compress(CONST WritingFile& File, LPVOID Callback) {
 		BYTE Props[5];
 		DWORD PropsSize = 5;
 		DWORD UncompressedSize = Data - Ptr;
 		DWORD CompressedSize = UncompressedSize;
-		if (!LzmaCompress(Data, &CompressedSize, Ptr, UncompressedSize, Props, &PropsSize, 5, 0, 3, 4, 2, 32, 4)) {
+		if (!LzmaCompress(Data, &CompressedSize, Ptr, UncompressedSize, Props, &PropsSize, 5, 0, 3, 4, 2, 32, 4, Callback)) {
 			if (File.WriteDword(CompressedSize + 13)) {
 				if (File.Write(Props, 5)) {
 					if (File.WriteDword(UncompressedSize)) {
@@ -240,7 +240,7 @@ public:
 							if (Data) {
 								DWORD TotalUncompressed = UncompressedSize, TotalCompressed = CompressedSize;
 								INT Result = LzmaUncompress(Data, &TotalUncompressed, Compressed, &TotalCompressed, Props, 5);
-								if ((!Result || Result == SZ_ERROR_INPUT_EOF) && TotalUncompressed <= UncompressedSize && TotalCompressed <= CompressedSize) {
+								if (Result != SZ_ERROR_DATA && TotalUncompressed <= UncompressedSize && TotalCompressed <= CompressedSize) {
 									delete[] Ptr;
 									Ptr = Data;
 									End = Data + TotalUncompressed;

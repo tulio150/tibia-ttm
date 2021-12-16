@@ -287,6 +287,62 @@ void Aes256::decrypt(const unsigned char *key, unsigned char* buffer)
 	add_round_key(rkey, buffer, i);
 }
 
+ void Aes256::get_fast_key(unsigned char* fkey, const unsigned char* key)
+{
+	unsigned char i, rcon;
+
+	copy_key(key, fkey);
+	for (i = NUM_ROUNDS / 2 + 1, rcon = 1; --i;)
+		expand_enc_key(fkey, &rcon);
+}
+
+unsigned long Aes256::decrypt_fast(const unsigned char* fkey, unsigned char* encrypted, unsigned long encrypted_length)
+{
+	if (!(encrypted_length -= encrypted_length % BLOCK_SIZE)) {
+		return 0;
+	}
+
+	unsigned long i;
+	for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
+		decrypt_fast(fkey, encrypted + i);
+	}
+
+	unsigned long padding = encrypted[--encrypted_length];
+	if (!padding || padding > BLOCK_SIZE) {
+		return 0;
+	}
+	for (i = 1; i < padding; i++) {
+		if (encrypted[--encrypted_length] != padding) {
+			return 0;
+		}
+	}
+
+	return encrypted_length;
+}
+
+void Aes256::decrypt_fast(const unsigned char* fkey, unsigned char* buffer)
+{
+	unsigned char i, rcon;
+	unsigned char rkey[KEY_SIZE];
+
+	copy_key(fkey, rkey);
+
+	add_round_key(rkey, buffer, NUM_ROUNDS);
+	shift_rows_inv(buffer);
+	sub_bytes_inv(buffer);
+
+	for (i = NUM_ROUNDS, rcon = 0x80; --i;)
+	{
+		if ((i & 1))
+			expand_dec_key(rkey, &rcon);
+		add_round_key(rkey, buffer, i);
+		mix_columns_inv(buffer);
+		shift_rows_inv(buffer);
+		sub_bytes_inv(buffer);
+	}
+	add_round_key(rkey, buffer, i);
+}
+
 void Aes256::expand_enc_key(unsigned char *rkey, unsigned char *rc)
 {
 	register unsigned char i;
