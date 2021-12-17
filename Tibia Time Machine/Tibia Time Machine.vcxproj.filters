@@ -130,4 +130,9 @@
   <ItemGroup>
     <Text Include="ttm file format.txt" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>
