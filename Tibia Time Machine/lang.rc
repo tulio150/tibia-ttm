@@ -98,7 +98,7 @@ STRINGTABLE
 
 	MESSAGE_PROXY "Activate your proxy now and press OK to continue."
 
-	MESSAGE_END_VIDEO "You reached the end of the video.\nThanks for watching!\n\nTibia Time Machine " STR_VERSION "\nCreated by tulio150 @ " SITE_URL
+	MESSAGE_END_VIDEO "You reached the end of the video.\nThanks for watching!\n\nTibia Time Machine " STR_VERSION "\nCreated by tulio150 @ " SITE_URL "\nPlase donate if you enjoyed"
 	MESSAGE_EDIT_START "Tibia Time Machine Editor\n\nThe game session now starts in the current position."
 	MESSAGE_EDIT_END "Tibia Time Machine Editor\n\nThe game session now ends in the current position."
 	MESSAGE_EDIT_FAST "Tibia Time Machine Editor\n\nThe specified amount of time will be played 2x faster."
@@ -216,7 +216,7 @@ LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
 
 	MESSAGE_PROXY "Ative seu proxy agora e aperte OK para continuar."
 
-	MESSAGE_END_VIDEO "Você chegou ao fim do vídeo.\nObrigado por assitir!\n\nTibia Time Machine " STR_VERSION "\nCriado por tulio150 @ " SITE_URL
+	MESSAGE_END_VIDEO "Você chegou ao fim do vídeo.\nObrigado por assitir!\n\nTibia Time Machine " STR_VERSION "\nCriado por tulio150 @ " SITE_URL "\nFaça uma doação se tiver gostado"
 	MESSAGE_EDIT_START "Editor do Tibia Time Machine\n\nO início da sessão foi redefinido para a posição atual."
 	MESSAGE_EDIT_END "Editor do Tibia Time Machine\n\nO fim da sessão foi redefinido para a posição atual."
 	MESSAGE_EDIT_FAST "Editor do Tibia Time Machine\n\nO tempo especificado será reproduzido 2x mais rápido."

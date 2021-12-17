@@ -248,9 +248,7 @@ namespace Video {
 			Current = Login;
 			Login = NULL;
 		}
-		if (Current) {
-			Unload();
-		}
+		Unload();
 	}
 
 	VOID FillSessionList() {
@@ -465,8 +463,15 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		Packet *First() {
-			return Last ? Last->Next : Login;
+		Session *&Started() {
+			return Last ? *(Session **) &Last->Next : Login;
+		}
+		VOID Cancel() {
+			if (Session *&First = Started()) {
+				Current = First;
+				First = NULL;
+				Unload();
+			}
 		}
 		BOOL Read(LPBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
@@ -477,7 +482,7 @@ namespace Video {
 					if (PacketSize) {
 						Store = Parser->AllocPacket(*this, PacketSize);
 						if (!Store) {
-							CancelOpen();
+							Cancel();
 							return FALSE;
 						}
 						Want = PacketSize;
@@ -489,22 +494,22 @@ namespace Video {
 				}
 				else {
 					if (!Parser->GetPacketType()) {
-						CancelOpen();
+						Cancel();
 						return FALSE;
 					}
 					if (Parser->EnterGame) {
 						if (!Parser->FixEnterGame(*this)) {
-							CancelOpen();
+							Cancel();
 							return FALSE;
 						}
 						if (Current) {
 							if (1000 > INFINITE - Current->Time) {
-								CancelOpen();
+								Cancel();
 								return FALSE;
 							}
 							Current->EndSession();
 							if (!(Current = Current->Next = new(std::nothrow) Session(Current))) {
-								CancelOpen();
+								Cancel();
 								return FALSE;
 							}
 						}
@@ -518,7 +523,10 @@ namespace Video {
 					else if (Parser->Pending || Parser->PlayerData) {
 						Discard(); //Pending packet, just get data (should not exist, but who knwows)
 					}
-					else if (First())  {
+					else if (!Started())  {
+						return FALSE; //common packet without a login packet first (usually wrong version selected)
+					}
+					else {
 						if (!Parser->FixTrade(*this)) {
 							CancelOpen();
 							return FALSE;
@@ -535,9 +543,6 @@ namespace Video {
 							return FALSE;
 						}
 						Current->Record(*this);
-					}
-					else {
-						return FALSE; //common packet without a login packet first (usually wrong version selected)
 					}
 					LastTime = Time;
 					Store = LPBYTE(&PacketSize);
@@ -603,7 +608,6 @@ namespace Video {
 		}
 		DWORD Size = 16 + PacketSize;
 		for (Current = Login; Current = Current->Next; Packets++) {
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 			if (Packets == INFINITE) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -614,6 +618,7 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			Size += 10 + PacketSize;
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		BufferedFile Encoder;
 		if (!Encoder.LZMA_Start(Size)) {
@@ -625,15 +630,14 @@ namespace Video {
 		Encoder.WriteDword(Packets);
 		Current = Login;
 		do {
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			PacketSize = Packet->RawSize();
 			Encoder.WriteWord(PacketSize);
 			Encoder.WriteDword(Current->Time);
 			Encoder.Write(Packet, PacketSize);
 			Encoder.WriteDword(0xFAFAFAFA); // Checksum is ignored, repetitive pattern compresses to a smaller video
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		MainWnd::Progress_Start();
 		if (!Encoder.LZMA_Compress(File, LZMA_Callback)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -703,26 +707,26 @@ namespace Video {
 		Packets -= 57;
 		Converter Src;
 		for (DWORD i = 0; i < Packets; i++) {
-			MainWnd::Progress_Set(i, Packets);
 			WORD Size;
 			if (!File.ReadWord(Size)) {
-				CancelOpen();
+				Src.Cancel();
 				return ERROR_CORRUPT_VIDEO;
 			}
 			if (!File.ReadDword(Src.Time)) {
-				CancelOpen();
+				Src.Cancel();
 				return ERROR_CORRUPT_VIDEO;
 			}
 			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it
 			if (!Data) {
-				CancelOpen();
+				Src.Cancel();
 				return ERROR_CORRUPT_VIDEO;
 			}
 			if (!Src.Read(Data, Size)) {
 				return ERROR_CORRUPT_VIDEO;
 			}
+			MainWnd::Progress_Set(i, Packets);
 		}
-		if (!Src.First()) {
+		if (!Src.Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
@@ -786,7 +790,7 @@ namespace Video {
 			case 5: return 772;
 			case 6: return 800;
 		}
-		return 1100;
+		return 830;
 	}
 	UINT OpenREC(CONST HWND Parent) {
 		BufferedFile File;
@@ -816,24 +820,23 @@ namespace Video {
 			Packets -= 57;
 			DWORD Mod = Version < 4 ? 5 : Version < 6 ? 8 : 6;
 			for (DWORD i = 0; i < Packets; i++) {
-				MainWnd::Progress_Set(i, Packets);
 				WORD Size;
 				if (!File.ReadWord(Size)) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
 				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				BYTE Key = Size + Src.Time + 2;
@@ -849,13 +852,14 @@ namespace Video {
 				}
 				if (Version > 4 && Size) {
 					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) {
-						CancelOpen();
+						Src.Cancel();
 						return ERROR_CORRUPT_VIDEO;
 					}
 				}
 				if (!Src.Read(Data, Size)) {
 					return ERROR_CORRUPT_VIDEO;
 				}
+				MainWnd::Progress_Set(i, Packets);
 			}
 		}
 		else {
@@ -863,27 +867,27 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			for (DWORD i = 0; i < Packets; i++) {
-				MainWnd::Progress_Set(i, Packets);
 				DWORD Size;
 				if (!File.ReadDword(Size)) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
-					CancelOpen();
+					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!Src.Read(Data, Size)) {
 					return ERROR_CORRUPT_VIDEO;
 				}
+				MainWnd::Progress_Set(i, Packets);
 			}
 		}
-		if (!Src.First()) {
+		if (!Src.Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(TRUE);
