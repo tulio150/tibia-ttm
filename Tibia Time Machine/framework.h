@@ -52,12 +52,6 @@ inline VOID CopyMemoryW(CONST LPSTR Dst, CONST LPCWSTR Src, SIZE_T Len) {
 //Memory comparison
 #define DiffMemory memcmp
 
-//Resource string size
-inline int LoadStringSize(CONST HINSTANCE hInstance, CONST UINT uID) {
-	WCHAR Dummy[2];
-	return LoadStringW(hInstance, uID, Dummy, NULL);
-}
-
 #ifdef _DEBUG
 #define Debug(x) OutputDebugStringA(x "\n")
 #else

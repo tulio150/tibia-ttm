@@ -125,7 +125,6 @@ protected:
 	LPBYTE End;
 
 public:
-
 	BufferedFile(): Ptr(NULL) {}
 	~BufferedFile() {
 		delete[] Ptr;
@@ -207,9 +206,7 @@ public:
 	}
 	BOOL LZMA_Compress(CONST WritingFile& File, LPVOID Callback) {
 		BYTE Props[5];
-		DWORD PropsSize = 5;
-		DWORD UncompressedSize = Data - Ptr;
-		DWORD CompressedSize = UncompressedSize;
+		DWORD PropsSize = 5, UncompressedSize = Data - Ptr, CompressedSize = UncompressedSize;
 		if (!LzmaCompress(Data, &CompressedSize, Ptr, UncompressedSize, Props, &PropsSize, 5, 0, 3, 4, 2, 32, 4, Callback)) {
 			if (File.WriteDword(CompressedSize + 13)) {
 				if (File.Write(Props, 5)) {

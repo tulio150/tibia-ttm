@@ -206,7 +206,6 @@ namespace Video {
 							Tibia::Version = Version < 700 ? 700 : LATEST;
 							return ERROR_UNSUPPORTED_TIBIA_VERSION;
 						}
-						MainWnd::Progress_Start();
 						Tibia::SetVersionString(Version);
 						Override = FALSE;
 					}
@@ -349,28 +348,26 @@ namespace Video {
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		{
-			WORD Version;
-			if (!File.ReadWord(Version)) {
+		WORD Version;
+		if (!File.ReadWord(Version)) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		BYTE HostLen;
+		if (!File.ReadByte(HostLen) || HostLen > 127) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		LPCSTR Host = NULL; WORD Port = PORT;
+		if (HostLen) {
+			Host = LPCSTR(File.Skip(HostLen));
+			if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
 				return ERROR_CORRUPT_VIDEO;
 			}
-			BYTE HostLen;
-			if (!File.ReadByte(HostLen) || HostLen > 127) {
+			if (!File.ReadWord(Port) || !Port) {
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPCSTR Host = NULL; WORD Port = PORT;
-			if (HostLen) {
-				Host = LPCSTR(File.Skip(HostLen));
-				if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.ReadWord(Port) || !Port) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-			}
-			if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
-				return Error;
-			}
+		}
+		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
+			return Error;
 		}
 		DWORD TotalTime;
 		if (!File.ReadDword(TotalTime)) {
@@ -380,7 +377,6 @@ namespace Video {
 		if (!Src.Read(File) || !Parser->PlayerData) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-
 		if (!Parser->EnterGame) {//videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
 			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) {
 				return ERROR_CORRUPT_VIDEO;
@@ -450,10 +446,10 @@ namespace Video {
 	}
 
 	class Converter : private VideoPacket {
-		DWORD LastTime;
-		LPBYTE Store;
-		WORD Want;
 		WORD PacketSize;
+		WORD Want;
+		LPBYTE Store;
+		DWORD LastTime;
 	public:
 		DWORD Time;
 
@@ -463,10 +459,10 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		Session *&Started() {
+		static Session *&Started() {
 			return Last ? *(Session **) &Last->Next : Login;
 		}
-		VOID Cancel() {
+		static VOID Cancel() {
 			if (Session *&First = Started()) {
 				Current = First;
 				First = NULL;
@@ -521,7 +517,7 @@ namespace Video {
 						Current->Record(*this);
 					}
 					else if (Parser->Pending || Parser->PlayerData) {
-						Discard(); //Pending packet, just get data (should not exist, but who knwows)
+						Discard(); //pending packet, just get data (should not exist, but who knwows)
 					}
 					else if (!Started())  {
 						return FALSE; //common packet without a login packet first (usually wrong version selected)
@@ -562,7 +558,7 @@ namespace Video {
 		return Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : 3;
 	}
 
-	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) {
+	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
 		MainWnd::Progress_Set(DecSize, TotalSize);
 		return 0;
 	}
@@ -575,7 +571,7 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (Tibia::HostLen) { //Our little mod to allow otserver info, no other player checks the hash
+		if (Tibia::HostLen) { // Our little mod to allow otserver info, no other player checks the hash
 			if (!File.WriteDword(Tibia::HostLen + 3)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -625,8 +621,8 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		Encoder.WriteByte(GetRECVersion()); //Ignored by all players
-		Encoder.WriteByte(2); // Ignored by all players, 2 means encrypted format, but without encryption
+		Encoder.WriteByte(GetRECVersion()); // Ignored by all players
+		Encoder.WriteByte(2); // Ignored by most players, 2 means encrypted format, but without encryption
 		Encoder.WriteDword(Packets);
 		Current = Login;
 		do {
@@ -650,7 +646,6 @@ namespace Video {
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		WORD Version;
 		LPBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
 		if (!Hash) {
 			return ERROR_CORRUPT_VIDEO;
@@ -659,7 +654,7 @@ namespace Video {
 		if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+		WORD Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
 		BYTE HostLen = NULL;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
@@ -697,7 +692,7 @@ namespace Video {
 		if (!File.ReadByte(RecVersion)) { // fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // all CAMs use encrypted flag, but without encryption
+		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // all CAMs use encrypted flag, but without encryption (not sure if should be checking)
 			return ERROR_CORRUPT_VIDEO;
 		}
 		DWORD Packets;
@@ -794,11 +789,12 @@ namespace Video {
 	}
 	UINT OpenREC(CONST HWND Parent) {
 		BufferedFile File;
-		if (!File.Open(FileName)) {
+		DWORD FileSize = File.Open(FileName);
+		if (FileSize < 6) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		BYTE Version;
-		if (!File.ReadByte(Version) || Version < 3 || Version > 6) { //3: > 7.2, 4: > 7.7, 5: > 7.72, 6: > 8.0
+		BYTE RecVersion;
+		if (!File.ReadByte(RecVersion) || RecVersion < 3 || RecVersion > 6) { //3: > 7.2, 4: > 7.7, 5: > 7.72, 6: > 8.0
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
@@ -806,7 +802,7 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (!Last && !Tibia::Running) {
-			Tibia::SetHost(GuessVersion(Version, Encryption), NULL, LPCTSTR(NULL), PORT);
+			Tibia::SetHost(GuessVersion(RecVersion, Encryption), NULL, LPCTSTR(NULL), PORT);
 			if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
 				return ERROR_TIBICAM_VERSION;
 			}
@@ -818,7 +814,7 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			Packets -= 57;
-			DWORD Mod = Version < 4 ? 5 : Version < 6 ? 8 : 6;
+			DWORD Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			for (DWORD i = 0; i < Packets; i++) {
 				WORD Size;
 				if (!File.ReadWord(Size)) {
@@ -850,7 +846,7 @@ namespace Video {
 					}
 					Data[i] -= Minus;
 				}
-				if (Version > 4 && Size) {
+				if (RecVersion > 4 && Size) {
 					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) {
 						Src.Cancel();
 						return ERROR_CORRUPT_VIDEO;
@@ -1008,7 +1004,7 @@ namespace Video {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
 				if (Pos) {
-					if (Pos + FileSize + 4 + LoadStringSize(NULL, Error) > 1400) {
+					if (Pos + FileSize + 4 + RSTRING(Error).Len > 1400) {
 						continue;
 					}
 					ErrorString[Pos++] = '\n';
