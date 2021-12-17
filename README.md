@@ -1,5 +1,5 @@
 # tibia-ttm
-Tibia Time Machine 6.2
+Tibia Time Machine 6.3
 by tulio150 - otland.net
 ------------------------
 
