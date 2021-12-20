@@ -835,16 +835,10 @@ namespace Video {
 					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
-				BYTE Key = Size + Src.Time + 2;
+				CHAR Key = Size + Src.Time + 2;
 				for (WORD i = 0; i < Size; i++) {
-					CHAR Minus = Key + 33 * i;
-					if (Minus < 0) {
-						while (-Minus % Mod) Minus++;
-					}
-					else {
-						while (Minus % Mod) Minus++;
-					}
-					Data[i] -= Minus;
+					Data[i] -= Key < 0 ? Key + (-Key % Mod) : Key % Mod ? Key + (Mod - (Key % Mod)) : Key;
+					Key += 33;
 				}
 				if (RecVersion > 4 && Size) {
 					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) {

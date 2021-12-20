@@ -169,17 +169,16 @@ unsigned long Aes256::decrypt_continue(const unsigned char *encrypted, const uns
 }
 unsigned long Aes256::decrypt_end(unsigned char *plain)
 {
-	if (!m_i) {
-		return 0;
-	}
-	unsigned long padding = plain[m_i - 1];
-	if (!padding || padding > BLOCK_SIZE) {
-		return 0;
-	}
-	m_i -= padding;
-	for (unsigned long i = 0; i < padding; i++) {
-		if (plain[m_i + i] != padding) {
+	if (m_i) {
+		unsigned long padding = plain[m_i - 1];
+		if (!padding || padding > BLOCK_SIZE) {
 			return 0;
+		}
+		m_i -= padding;
+		for (unsigned long i = 0; i < padding; i++) {
+			if (plain[m_i + i] != padding) {
+				return 0;
+			}
 		}
 	}
 	return m_i;
@@ -240,22 +239,20 @@ unsigned long Aes256::decrypt(const unsigned char *key, const unsigned char *enc
 
 unsigned long Aes256::decrypt(const unsigned char *key, unsigned char *encrypted, unsigned long encrypted_length)
 {
-	if (!(encrypted_length -= encrypted_length % BLOCK_SIZE)) {
-		return 0;
-	}
+	if (encrypted_length -= encrypted_length % BLOCK_SIZE) {
+		unsigned long i;
+		for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
+			decrypt(key, encrypted + i);
+		}
 
-	unsigned long i;
-	for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
-		decrypt(key, encrypted + i);
-	}
-
-	unsigned long padding = encrypted[--encrypted_length];
-	if (!padding || padding > BLOCK_SIZE) {
-		return 0;
-	}
-	for (i = 1; i < padding; i++) {
-		if (encrypted[--encrypted_length] != padding) {
+		unsigned long padding = encrypted[--encrypted_length];
+		if (!padding || padding > BLOCK_SIZE) {
 			return 0;
+		}
+		for (i = 1; i < padding; i++) {
+			if (encrypted[--encrypted_length] != padding) {
+				return 0;
+			}
 		}
 	}
 
@@ -287,33 +284,30 @@ void Aes256::decrypt(const unsigned char *key, unsigned char* buffer)
 	add_round_key(rkey, buffer, i);
 }
 
- void Aes256::get_fast_key(unsigned char* fkey, const unsigned char* key)
+ void Aes256::get_fast_key(unsigned char* fkey)
 {
 	unsigned char i, rcon;
 
-	copy_key(key, fkey);
 	for (i = NUM_ROUNDS / 2 + 1, rcon = 1; --i;)
 		expand_enc_key(fkey, &rcon);
 }
 
 unsigned long Aes256::decrypt_fast(const unsigned char* fkey, unsigned char* encrypted, unsigned long encrypted_length)
 {
-	if (!(encrypted_length -= encrypted_length % BLOCK_SIZE)) {
-		return 0;
-	}
+	if (encrypted_length -= encrypted_length % BLOCK_SIZE) {
+		unsigned long i;
+		for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
+			decrypt_fast(fkey, encrypted + i);
+		}
 
-	unsigned long i;
-	for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
-		decrypt_fast(fkey, encrypted + i);
-	}
-
-	unsigned long padding = encrypted[--encrypted_length];
-	if (!padding || padding > BLOCK_SIZE) {
-		return 0;
-	}
-	for (i = 1; i < padding; i++) {
-		if (encrypted[--encrypted_length] != padding) {
+		unsigned long padding = encrypted[--encrypted_length];
+		if (!padding || padding > BLOCK_SIZE) {
 			return 0;
+		}
+		for (i = 1; i < padding; i++) {
+			if (encrypted[--encrypted_length] != padding) {
+				return 0;
+			}
 		}
 	}
 

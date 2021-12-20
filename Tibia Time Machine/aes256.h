@@ -24,7 +24,7 @@ public:
 	static unsigned long decrypt(const unsigned char *key, unsigned char* encrypted, unsigned long encrypted_length);
 	static void decrypt(const unsigned char *key, unsigned char *buffer);
 
-	static void get_fast_key(unsigned char *fkey, const unsigned char* key);
+	static void get_fast_key(unsigned char *fkey);
 	static unsigned long decrypt_fast(const unsigned char* fkey, unsigned char* encrypted, unsigned long encrypted_length);
 	static void decrypt_fast(const unsigned char* fkey, unsigned char* buffer);
 
