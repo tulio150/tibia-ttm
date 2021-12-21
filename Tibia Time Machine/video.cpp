@@ -837,11 +837,12 @@ namespace Video {
 				}
 				CHAR Key = Size + Src.Time + 2;
 				for (WORD i = 0; i < Size; i++) {
-					Data[i] -= Key - Key % Mod + (Key % Mod > 0 ? Mod : 0);
+					CHAR Rem = Key % Mod;
+					Data[i] -= Key + (Rem > 0 ? Mod - Rem : -Rem);
 					Key += 33;
 				}
 				if (RecVersion > 4 && Size) {
-					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) {
+					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) { //this is still slow, let's make it parallel
 						Src.Cancel();
 						return ERROR_CORRUPT_VIDEO;
 					}
