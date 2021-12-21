@@ -814,7 +814,7 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			Packets -= 57;
-			DWORD Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
+			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			for (DWORD i = 0; i < Packets; i++) {
 				WORD Size;
 				if (!File.ReadWord(Size)) {
@@ -837,7 +837,7 @@ namespace Video {
 				}
 				CHAR Key = Size + Src.Time + 2;
 				for (WORD i = 0; i < Size; i++) {
-					Data[i] -= Key < 0 ? Key + (-Key % Mod) : Key % Mod ? Key + (Mod - (Key % Mod)) : Key;
+					Data[i] -= Key - Key % Mod + (Key % Mod > 0 ? Mod : 0);
 					Key += 33;
 				}
 				if (RecVersion > 4 && Size) {
