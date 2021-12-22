@@ -7,10 +7,10 @@
 #define FD(x)  (((x) >> 1) ^ (((x) & 1) ? 0x8d : 0))
 
 #define KEY_SIZE   32
+#define BLOCK_SIZE 16
 #define NUM_ROUNDS 14
 
-inline unsigned char rj_xtime(unsigned char x)
-{
+inline unsigned char rj_xtime(unsigned char x) {
 	return (x & 0x80) ? ((x << 1) ^ 0x1b) : (x << 1);
 }
 
@@ -83,270 +83,84 @@ const unsigned char sboxinv[256] = {
 	0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 };
 
-Aes256::Aes256(const unsigned char *key)
-	: m_key(key)
-	, m_buffer_pos(0)
-	, m_i(0)
-{}
-
-Aes256::~Aes256()
-{}
-
-unsigned long Aes256::encrypt_start(const unsigned long plain_length)
-{
-	// Reset buffer
-	m_buffer_pos = 0;
-	m_i = 0;
-
-	return plain_length + (BLOCK_SIZE - (plain_length % BLOCK_SIZE));
-}
-
-unsigned long Aes256::encrypt_continue(const unsigned char* plain, const unsigned long plain_length, unsigned char *encrypted)
-{
-	unsigned long i = 0;
-
-	while (i < plain_length) {
-		m_buffer[m_buffer_pos++] = plain[i++];
-
-		if (m_buffer_pos == BLOCK_SIZE) {
-			encrypt(m_key, m_buffer);
-
-			for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos) {
-				encrypted[m_i++] = m_buffer[m_buffer_pos];
-			}
-
-			m_buffer_pos = 0;
-		}
-	}
-
-	return m_i;
-}
-
-unsigned long Aes256::encrypt_end(unsigned char *encrypted)
-{
-	unsigned long padding = BLOCK_SIZE - m_buffer_pos;
-
-	while (m_buffer_pos < BLOCK_SIZE)
-		m_buffer[m_buffer_pos++] = padding & 0xFF;
-
-	encrypt(m_key, m_buffer);
-
-	for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos) {
-		encrypted[m_i++] = m_buffer[m_buffer_pos];
-	}
-
-	m_buffer_pos = 0;
-
-	return m_i;
-}
-
-unsigned long Aes256::decrypt_start(const unsigned long encrypted_length)
-{
-	// Reset buffer
-	m_buffer_pos = 0;
-	m_i = 0;
-
-	return encrypted_length % BLOCK_SIZE;
-}
-
-unsigned long Aes256::decrypt_continue(const unsigned char *encrypted, const unsigned long encrypted_length, unsigned char *plain)
-{
-	unsigned long i = 0;
-
-	while (i < encrypted_length) {
-		m_buffer[m_buffer_pos++] = encrypted[i++];
-		if (m_buffer_pos == BLOCK_SIZE) {
-			decrypt(m_key, m_buffer);
-
-			for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos)
-				plain[m_i++] = m_buffer[m_buffer_pos];
-
-			m_buffer_pos = 0;
-		}
-	}
-
-	return m_i;
-}
-unsigned long Aes256::decrypt_end(unsigned char *plain)
-{
-	if (m_i) {
-		unsigned long padding = plain[m_i - 1];
-		if (!padding || padding > BLOCK_SIZE) {
-			return 0;
-		}
-		m_i -= padding;
-		for (unsigned long i = 0; i < padding; i++) {
-			if (plain[m_i + i] != padding) {
-				return 0;
-			}
-		}
-	}
-	return m_i;
-}
-
-unsigned long Aes256::encrypt(const unsigned char *key, const unsigned char *plain, const unsigned long plain_length, unsigned char *encrypted)
-{
-	Aes256 aes(key);
-	aes.encrypt_start(plain_length);
-	aes.encrypt_continue(plain, plain_length, encrypted);
-	return aes.encrypt_end(encrypted);
-}
-
-unsigned long Aes256::encrypt(const unsigned char *key, unsigned char *plain, unsigned long plain_length)
-{
+unsigned long Aes256::encrypt(const unsigned char *key, unsigned char *plain, unsigned long plain_length) {
 	unsigned long i;
 	unsigned long padding = BLOCK_SIZE - (plain_length % BLOCK_SIZE);
 	for (i = 0; i < padding; i++) {
 		plain[plain_length++] = padding & 0xFF;
 	}
-
+	unsigned char j, rcon;
+	unsigned char rkey[KEY_SIZE];
+	copy_key(key, rkey);
 	for (i = 0; i < plain_length; i += BLOCK_SIZE) {
-		encrypt(key, plain + i);
+		add_round_key(rkey, plain + i, 0);
+		sub_bytes(plain + i);
+		shift_rows(plain + 1);
 	}
-
+	for (j = 1, rcon = 1; j < NUM_ROUNDS; ++j) {
+		if (!(i & 1))
+			expand_enc_key(rkey, &rcon);
+		for (i = 0; i < plain_length; i += BLOCK_SIZE) {
+			mix_columns(plain + i);
+			add_round_key(rkey, plain + i, j);
+			sub_bytes(plain + i);
+			shift_rows(plain + i);
+		}
+	}
+	expand_enc_key(rkey, &rcon);
+	for (i = 0; i < plain_length; i += BLOCK_SIZE) {
+		add_round_key(rkey, plain + i, j);
+	}
 	return plain_length;
 }
 
-void Aes256::encrypt(const unsigned char *key, unsigned char* buffer)
-{
-	unsigned char i, rcon;
-	unsigned char rkey[KEY_SIZE];
-
-	copy_key(key, rkey);
-	add_round_key(rkey, buffer, 0);
-	for (i = 1, rcon = 1; i < NUM_ROUNDS; ++i)
-	{
-		sub_bytes(buffer);
-		shift_rows(buffer);
-		mix_columns(buffer);
-		if (!(i & 1))
-			expand_enc_key(rkey, &rcon);
-		add_round_key(rkey, buffer, i);
+unsigned long Aes256::decrypt(const unsigned char *key, unsigned char *encrypted, unsigned long encrypted_length) {
+	if (!encrypted_length || encrypted_length % BLOCK_SIZE) {
+		return 0;
 	}
-	sub_bytes(buffer);
-	shift_rows(buffer);
-	expand_enc_key(rkey, &rcon);
-	add_round_key(rkey, buffer, i);
-}
-
-unsigned long Aes256::decrypt(const unsigned char *key, const unsigned char *encrypted, const unsigned long encrypted_length, unsigned char *plain)
-{
-	Aes256 aes(key);
-	aes.decrypt_start(encrypted_length);
-	aes.decrypt_continue(encrypted, encrypted_length, plain);
-	return aes.decrypt_end(plain);
-}
-
-unsigned long Aes256::decrypt(const unsigned char *key, unsigned char *encrypted, unsigned long encrypted_length)
-{
-	if (encrypted_length -= encrypted_length % BLOCK_SIZE) {
-		unsigned long i;
-		for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
-			decrypt(key, encrypted + i);
-		}
-
-		unsigned long padding = encrypted[--encrypted_length];
-		if (!padding || padding > BLOCK_SIZE) {
-			return 0;
-		}
-		for (i = 1; i < padding; i++) {
-			if (encrypted[--encrypted_length] != padding) {
-				return 0;
-			}
-		}
-	}
-
-	return encrypted_length;
-}
-
-void Aes256::decrypt(const unsigned char *key, unsigned char* buffer)
-{
-	unsigned char i, rcon;
+	unsigned char j, rcon;
 	unsigned char rkey[KEY_SIZE];
-
 	copy_key(key, rkey);
-	for (i = NUM_ROUNDS / 2 + 1, rcon = 1; --i;)
+	for (j = NUM_ROUNDS / 2 + 1, rcon = 1; --j;)
 		expand_enc_key(rkey, &rcon);
-
-	add_round_key(rkey, buffer, NUM_ROUNDS);
-	shift_rows_inv(buffer);
-	sub_bytes_inv(buffer);
-
-	for (i = NUM_ROUNDS, rcon = 0x80; --i;)
-	{
-		if ((i & 1))
-			expand_dec_key(rkey, &rcon);
-		add_round_key(rkey, buffer, i);
-		mix_columns_inv(buffer);
-		shift_rows_inv(buffer);
-		sub_bytes_inv(buffer);
+	unsigned long i;
+	for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
+		add_round_key(rkey, encrypted + i, NUM_ROUNDS);
+		shift_rows_inv(encrypted + i);
+		sub_bytes_inv(encrypted + i);
 	}
-	add_round_key(rkey, buffer, i);
-}
-
- void Aes256::get_fast_key(unsigned char* fkey)
-{
-	unsigned char i, rcon;
-
-	for (i = NUM_ROUNDS / 2 + 1, rcon = 1; --i;)
-		expand_enc_key(fkey, &rcon);
-}
-
-unsigned long Aes256::decrypt_fast(const unsigned char* fkey, unsigned char* encrypted, unsigned long encrypted_length)
-{
-	if (encrypted_length -= encrypted_length % BLOCK_SIZE) {
-		unsigned long i;
+	for (j = NUM_ROUNDS, rcon = 0x80; --j;) {
+		if ((j & 1))
+			expand_dec_key(rkey, &rcon);
 		for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
-			decrypt_fast(fkey, encrypted + i);
+			add_round_key(rkey, encrypted + i, j);
+			mix_columns_inv(encrypted + i);
+			shift_rows_inv(encrypted + i);
+			sub_bytes_inv(encrypted + i);
 		}
-
-		unsigned long padding = encrypted[--encrypted_length];
-		if (!padding || padding > BLOCK_SIZE) {
+	}
+	for (i = 0; i < encrypted_length; i += BLOCK_SIZE) {
+		add_round_key(rkey, encrypted + i, j);
+	}
+	unsigned long padding = encrypted[--encrypted_length];
+	if (!padding || padding > BLOCK_SIZE) {
+		return 0;
+	}
+	for (i = 1; i < padding; i++) {
+		if (encrypted[--encrypted_length] != padding) {
 			return 0;
 		}
-		for (i = 1; i < padding; i++) {
-			if (encrypted[--encrypted_length] != padding) {
-				return 0;
-			}
-		}
 	}
-
 	return encrypted_length;
 }
 
-void Aes256::decrypt_fast(const unsigned char* fkey, unsigned char* buffer)
-{
-	unsigned char i, rcon;
-	unsigned char rkey[KEY_SIZE];
-
-	copy_key(fkey, rkey);
-
-	add_round_key(rkey, buffer, NUM_ROUNDS);
-	shift_rows_inv(buffer);
-	sub_bytes_inv(buffer);
-
-	for (i = NUM_ROUNDS, rcon = 0x80; --i;)
-	{
-		if ((i & 1))
-			expand_dec_key(rkey, &rcon);
-		add_round_key(rkey, buffer, i);
-		mix_columns_inv(buffer);
-		shift_rows_inv(buffer);
-		sub_bytes_inv(buffer);
-	}
-	add_round_key(rkey, buffer, i);
-}
-
-void Aes256::expand_enc_key(unsigned char *rkey, unsigned char *rc)
-{
+void Aes256::expand_enc_key(unsigned char *rkey, unsigned char *rc) {
 	register unsigned char i;
-
 	rkey[0] = rkey[0] ^ sbox[rkey[29]] ^ (*rc);
 	rkey[1] = rkey[1] ^ sbox[rkey[30]];
 	rkey[2] = rkey[2] ^ sbox[rkey[31]];
 	rkey[3] = rkey[3] ^ sbox[rkey[28]];
 	*rc = FE(*rc);
-
 	for (i = 4; i < 16; i += 4) {
 		rkey[i] = rkey[i] ^ rkey[i - 4];
 		rkey[i + 1] = rkey[i + 1] ^ rkey[i - 3];
@@ -357,7 +171,6 @@ void Aes256::expand_enc_key(unsigned char *rkey, unsigned char *rc)
 	rkey[17] = rkey[17] ^ sbox[rkey[13]];
 	rkey[18] = rkey[18] ^ sbox[rkey[14]];
 	rkey[19] = rkey[19] ^ sbox[rkey[15]];
-
 	for (i = 20; i < 32; i += 4) {
 		rkey[i] = rkey[i] ^ rkey[i - 4];
 		rkey[i + 1] = rkey[i + 1] ^ rkey[i - 3];
@@ -366,29 +179,24 @@ void Aes256::expand_enc_key(unsigned char *rkey, unsigned char *rc)
 	}
 }
 
-void Aes256::expand_dec_key(unsigned char *rkey, unsigned char *rc)
-{
-	unsigned char i;
-
+void Aes256::expand_dec_key(unsigned char *rkey, unsigned char *rc) {
+	register unsigned char i;
 	for (i = 28; i > 16; i -= 4) {
 		rkey[i + 0] = rkey[i + 0] ^ rkey[i - 4];
 		rkey[i + 1] = rkey[i + 1] ^ rkey[i - 3];
 		rkey[i + 2] = rkey[i + 2] ^ rkey[i - 2];
 		rkey[i + 3] = rkey[i + 3] ^ rkey[i - 1];
 	}
-
 	rkey[16] = rkey[16] ^ sbox[rkey[12]];
 	rkey[17] = rkey[17] ^ sbox[rkey[13]];
 	rkey[18] = rkey[18] ^ sbox[rkey[14]];
 	rkey[19] = rkey[19] ^ sbox[rkey[15]];
-
 	for (i = 12; i > 0; i -= 4) {
 		rkey[i + 0] = rkey[i + 0] ^ rkey[i - 4];
 		rkey[i + 1] = rkey[i + 1] ^ rkey[i - 3];
 		rkey[i + 2] = rkey[i + 2] ^ rkey[i - 2];
 		rkey[i + 3] = rkey[i + 3] ^ rkey[i - 1];
 	}
-
 	*rc = FD(*rc);
 	rkey[0] = rkey[0] ^ sbox[rkey[29]] ^ (*rc);
 	rkey[1] = rkey[1] ^ sbox[rkey[30]];
@@ -396,91 +204,67 @@ void Aes256::expand_dec_key(unsigned char *rkey, unsigned char *rc)
 	rkey[3] = rkey[3] ^ sbox[rkey[28]];
 }
 
-void Aes256::sub_bytes(unsigned char *buffer)
-{
-	register unsigned char i = KEY_SIZE / 2;
-
-	while (i--)
+void Aes256::sub_bytes(unsigned char *buffer) {
+	for (register unsigned char i = BLOCK_SIZE; i--;)
 		buffer[i] = sbox[buffer[i]];
 }
 
-void Aes256::sub_bytes_inv(unsigned char *buffer)
-{
-	register unsigned char i = KEY_SIZE / 2;
-
-	while (i--)
+void Aes256::sub_bytes_inv(unsigned char *buffer) {
+	for (register unsigned char i = BLOCK_SIZE; i--;)
 		buffer[i] = sboxinv[buffer[i]];
 }
 
-void Aes256::copy_key(const unsigned char *key, unsigned char *rkey)
-{
+void Aes256::copy_key(const unsigned char *key, unsigned char *rkey) {
 	memcpy(rkey, key, KEY_SIZE);
 }
 
-void Aes256::add_round_key(unsigned char *rkey, unsigned char *buffer, const unsigned char round)
-{
-	register unsigned char i = KEY_SIZE / 2;
-
-	while (i--)
+void Aes256::add_round_key(unsigned char *rkey, unsigned char *buffer, const unsigned char round) {
+	for (register unsigned char i = BLOCK_SIZE; i--;)
 		buffer[i] ^= rkey[(round & 1) ? i + 16 : i];
 }
 
-void Aes256::shift_rows(unsigned char *buffer)
-{
+void Aes256::shift_rows(unsigned char *buffer) {
 	register unsigned char i, j, k, l; /* to make it potentially parallelable :) */
-
 	i = buffer[1];
 	buffer[1] = buffer[5];
 	buffer[5] = buffer[9];
 	buffer[9] = buffer[13];
 	buffer[13] = i;
-
 	j = buffer[10];
 	buffer[10] = buffer[2];
 	buffer[2] = j;
-
 	k = buffer[3];
 	buffer[3] = buffer[15];
 	buffer[15] = buffer[11];
 	buffer[11] = buffer[7];
 	buffer[7] = k;
-
 	l = buffer[14];
 	buffer[14] = buffer[6];
 	buffer[6] = l;
 }
 
-void Aes256::shift_rows_inv(unsigned char* buffer)
-{
+void Aes256::shift_rows_inv(unsigned char* buffer) {
 	register unsigned char i, j, k, l; /* same as above :) */
-
 	i = buffer[1];
 	buffer[1] = buffer[13];
 	buffer[13] = buffer[9];
 	buffer[9] = buffer[5];
 	buffer[5] = i;
-
 	j = buffer[2];
 	buffer[2] = buffer[10];
 	buffer[10] = j;
-
 	k = buffer[3];
 	buffer[3] = buffer[7];
 	buffer[7] = buffer[11];
 	buffer[11] = buffer[15];
 	buffer[15] = k;
-
 	l = buffer[6];
 	buffer[6] = buffer[14];
 	buffer[14] = l;
 }
 
-void Aes256::mix_columns(unsigned char *buffer)
-{
-	register unsigned char i, a, b, c, d, e;
-
-	for (i = 0; i < 16; i += 4)
-	{
+void Aes256::mix_columns(unsigned char *buffer) {
+	for (register unsigned char i = 0, a, b, c, d, e; i < BLOCK_SIZE; i += 4) {
 		a = buffer[i];
 		b = buffer[i + 1];
 		c = buffer[i + 2];
@@ -495,12 +279,8 @@ void Aes256::mix_columns(unsigned char *buffer)
 	}
 }
 
-void Aes256::mix_columns_inv(unsigned char *buffer)
-{
-	register unsigned char i, a, b, c, d, e, x, y, z;
-
-	for (i = 0; i < 16; i += 4)
-	{
+void Aes256::mix_columns_inv(unsigned char *buffer) {
+	for (register unsigned char i = 0, a, b, c, d, e, x, y, z; i < BLOCK_SIZE; i += 4) {
 		a = buffer[i];
 		b = buffer[i + 1];
 		c = buffer[i + 2];

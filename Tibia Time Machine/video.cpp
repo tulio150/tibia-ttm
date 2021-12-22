@@ -28,8 +28,6 @@ namespace Video {
 	INT Speed = 0;
 	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512") };
 
-	CONST BYTE RecKey[32] = { 0x1C, 0x55, 0xDB, 0x29, 0x08, 0x81, 0xC1, 0x98, 0x37, 0x74, 0x2F, 0xE6, 0x25, 0x9B, 0xE1, 0x36, 0xE6, 0x80, 0x3A, 0x8A, 0x94, 0x02, 0xCB, 0x75, 0xB4, 0x1F, 0xCF, 0x2C, 0xC7, 0x1E, 0x15, 0x53 }; // "Thy key is mine © 2006 GB Monaco"
-
 #define CurrentLogin ((Session *) Current)
 
 	VOID Packet::EndSession()  {
@@ -103,17 +101,16 @@ namespace Video {
 		}
 	}
 
-	DWORD WINAPI ThreadUnload(Packet *Current) {
+	VOID _cdecl ThreadUnload(Packet *Current) {
 		Packet *Next;
 		do {
 			Next = Current->Next;
 			delete Current;
 			SwitchToThread();
 		} while (Current = Next);
-		return 0;
 	}
 	VOID Unload() {
-		if (!CloseHandle(CreateThread(NULL, 1, LPTHREAD_START_ROUTINE(ThreadUnload), Current, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL))) {
+		if (_beginthread(_beginthread_proc_type(ThreadUnload), 0, Current) == -1L) {
 			ThreadUnload(Current); //out of memory, let's free some from our own thread
 		}
 	}
@@ -756,7 +753,6 @@ namespace Video {
 		NeedParser ToSave;
 		Current = Login;
 		do {
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			DWORD PacketSize = Packet->RawSize();
 			if (!File.WriteDword(PacketSize)) {
@@ -771,6 +767,7 @@ namespace Video {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		Changed = FALSE;
 		return NULL;
@@ -838,11 +835,11 @@ namespace Video {
 				CHAR Key = Size + Src.Time + 2;
 				for (WORD i = 0; i < Size; i++) {
 					CHAR Rem = Key % Mod;
-					Data[i] -= Key + (Rem > 0 ? Mod - Rem : -Rem);
+					Data[i] -= Key - (Rem > 0 ? Rem - Mod : Rem);
 					Key += 33;
 				}
 				if (RecVersion > 4 && Size) {
-					if (Size & 0xF || !(Size = Aes256::decrypt_fast(RecKey, Data, Size))) { //this is still slow, let's make it parallel
+					if (!(Size = Aes256::decrypt(LPBYTE("Thy key is mine © 2006 GB Monaco"), Data, Size))) {
 						Src.Cancel();
 						return ERROR_CORRUPT_VIDEO;
 					}

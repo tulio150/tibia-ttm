@@ -21,6 +21,7 @@
 #include <winsock2.h>
 #include <mmsystem.h>
 #include <windowsx.h>
+#include <process.h>
 #include <new.h>
 
 typedef unsigned __int64 QWORD;
