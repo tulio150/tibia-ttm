@@ -832,11 +832,12 @@ namespace Video {
 					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
-				CHAR Key = Size + Src.Time + 2;
+				CHAR Key = Size + Src.Time - 31, Rem;
 				for (WORD i = 0; i < Size; i++) {
-					CHAR Rem = Key % Mod;
-					Data[i] -= Key - (Rem > 0 ? Rem - Mod : Rem);
-					Key += 33;
+					if ((Rem = (Key += 33) % Mod) > 0) {
+						Rem -= Mod;
+					}
+					Data[i] -= Key - Rem;
 				}
 				if (RecVersion > 4 && Size) {
 					if (!(Size = Aes256::decrypt(LPBYTE("Thy key is mine © 2006 GB Monaco"), Data, Size))) {
