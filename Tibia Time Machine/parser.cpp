@@ -2259,8 +2259,7 @@ VOID Parser761::Encrypt() CONST {
 DWORD Adler32(LPBYTE Data, CONST LPBYTE End) {
 	DWORD a = 1, b = 0;
 	while (Data < End) {
-		a = (a + *(Data++)) % 65521;
-		b = (b + a) % 65521;
+		b = (b + (a = (a + *(Data++)) % 65521)) % 65521;
 	}
 	return a | (b << 16);
 }

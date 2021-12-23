@@ -95,10 +95,10 @@ unsigned long Aes256::encrypt(const unsigned char *key, unsigned char *plain, un
 	for (i = 0; i < plain_length; i += BLOCK_SIZE) {
 		add_round_key(rkey, plain + i, 0);
 		sub_bytes(plain + i);
-		shift_rows(plain + 1);
+		shift_rows(plain + i);
 	}
 	for (j = 1, rcon = 1; j < NUM_ROUNDS; ++j) {
-		if (!(i & 1))
+		if (!(j & 1))
 			expand_enc_key(rkey, &rcon);
 		for (i = 0; i < plain_length; i += BLOCK_SIZE) {
 			mix_columns(plain + i);

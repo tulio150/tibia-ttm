@@ -101,7 +101,7 @@ namespace Video {
 		}
 	}
 
-	VOID _cdecl ThreadUnload(Packet *Current) {
+	VOID WINAPIV ThreadUnload(Packet *Current) {
 		Packet *Next;
 		do {
 			Next = Current->Next;
