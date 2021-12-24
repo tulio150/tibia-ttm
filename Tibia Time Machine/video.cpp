@@ -4,7 +4,6 @@
 #include "tibia.h"
 #include "proxy.h"
 #include "loader.h"
-#include "aes256.h"
 
 #define CAM_HASH "TTM created CAM file - no hash."
 #define BIGDELAY 0xFFFF
@@ -812,24 +811,62 @@ namespace Video {
 			}
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
+			HCRYPTPROV Aes;
+			HCRYPTKEY AesKey;
+			if (RecVersion > 4) {
+				if (!CryptAcquireContext(&Aes, NULL, NULL, PROV_RSA_AES, CRYPT_SILENT)) {
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+				struct AES256KEYBLOB {
+					BLOBHEADER bhHdr = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
+					DWORD dwKeySize = 32;
+					BYTE szBytes[33] = "Thy key is mine © 2006 GB Monaco";
+				} AesBlob;
+				if (!CryptImportKey(Aes, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &AesKey)) {
+					CryptReleaseContext(Aes, NULL);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+				DWORD AesMode = CRYPT_MODE_ECB;
+				if (!CryptSetKeyParam(AesKey, KP_MODE, LPBYTE(&AesMode), NULL)) {
+					CryptDestroyKey(AesKey);
+					CryptReleaseContext(Aes, NULL);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+			}
 			for (DWORD i = 0; i < Packets; i++) {
 				WORD Size;
 				if (!File.ReadWord(Size)) {
 					Src.Cancel();
+					if (RecVersion > 4) {
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
+					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
 					Src.Cancel();
+					if (RecVersion > 4) {
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
+					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
 					Src.Cancel();
+					if (RecVersion > 4) {
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
+					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
 				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) {
 					Src.Cancel();
+					if (RecVersion > 4) {
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
+					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				CHAR Key = Size + Src.Time - 31, Rem;
@@ -840,15 +877,27 @@ namespace Video {
 					Data[i] -= Key - Rem;
 				}
 				if (RecVersion > 4 && Size) {
-					if (!(Size = Aes256::decrypt(LPBYTE("Thy key is mine © 2006 GB Monaco"), Data, Size))) {
+					DWORD AesSize = Size;
+					if (!CryptDecrypt(AesKey, NULL, TRUE, NULL, Data, &AesSize) || !AesSize) {
 						Src.Cancel();
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
 						return ERROR_CORRUPT_VIDEO;
 					}
+					Size = WORD(AesSize);
 				}
 				if (!Src.Read(Data, Size)) {
+					if (RecVersion > 4) {
+						CryptDestroyKey(AesKey);
+						CryptReleaseContext(Aes, NULL);
+					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				MainWnd::Progress_Set(i, Packets);
+			}
+			if (RecVersion > 4) {
+				CryptDestroyKey(AesKey);
+				CryptReleaseContext(Aes, NULL);
 			}
 		}
 		else {

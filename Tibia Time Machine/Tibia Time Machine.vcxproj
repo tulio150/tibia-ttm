@@ -130,7 +130,6 @@
     <ClCompile Include="bigword.cpp" />
     <ClCompile Include="loader.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="aes256.cpp" />
     <ClCompile Include="parser.cpp" />
     <ClCompile Include="playbar.cpp" />
     <ClCompile Include="proxy.cpp" />
@@ -140,7 +139,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bigword.h" />
-    <ClInclude Include="aes256.h" />
     <ClInclude Include="file.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="lang.h" />

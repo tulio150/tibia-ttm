@@ -22,6 +22,7 @@
 #include <mmsystem.h>
 #include <windowsx.h>
 #include <process.h>
+#include <wincrypt.h>
 #include <new.h>
 
 typedef unsigned __int64 QWORD;
