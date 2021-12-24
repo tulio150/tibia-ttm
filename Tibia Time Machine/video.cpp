@@ -27,6 +27,8 @@ namespace Video {
 	INT Speed = 0;
 	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512") };
 
+	HCRYPTKEY RecKey = NULL;
+
 #define CurrentLogin ((Session *) Current)
 
 	VOID Packet::EndSession()  {
@@ -811,24 +813,24 @@ namespace Video {
 			}
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
-			HCRYPTPROV Aes;
-			HCRYPTKEY AesKey;
-			if (RecVersion > 4) {
+			if (RecVersion > 4 && !RecKey) {
+				HCRYPTPROV Aes;
 				if (!CryptAcquireContext(&Aes, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				struct AES256KEYBLOB {
-					BLOBHEADER bhHdr = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
-					DWORD dwKeySize = 32;
-					BYTE szBytes[33] = "Thy key is mine © 2006 GB Monaco";
+					BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
+					DWORD Size = 32;
+					BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
 				} AesBlob;
-				if (!CryptImportKey(Aes, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &AesKey)) {
+				if (!CryptImportKey(Aes, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
 					CryptReleaseContext(Aes, NULL);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				DWORD AesMode = CRYPT_MODE_ECB;
-				if (!CryptSetKeyParam(AesKey, KP_MODE, LPBYTE(&AesMode), NULL)) {
-					CryptDestroyKey(AesKey);
+				if (!CryptSetKeyParam(RecKey, KP_MODE, LPBYTE(&AesMode), NULL)) {
+					CryptDestroyKey(RecKey);
+					RecKey = NULL;
 					CryptReleaseContext(Aes, NULL);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
@@ -837,36 +839,20 @@ namespace Video {
 				WORD Size;
 				if (!File.ReadWord(Size)) {
 					Src.Cancel();
-					if (RecVersion > 4) {
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
-					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
 					Src.Cancel();
-					if (RecVersion > 4) {
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
-					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
 					Src.Cancel();
-					if (RecVersion > 4) {
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
-					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
 				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) {
 					Src.Cancel();
-					if (RecVersion > 4) {
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
-					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				CHAR Key = Size + Src.Time - 31, Rem;
@@ -877,27 +863,17 @@ namespace Video {
 					Data[i] -= Key - Rem;
 				}
 				if (RecVersion > 4 && Size) {
-					DWORD AesSize = Size;
-					if (!CryptDecrypt(AesKey, NULL, TRUE, NULL, Data, &AesSize) || !AesSize) {
+					DWORD DecryptedSize = Size;
+					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &DecryptedSize) || !DecryptedSize) {
 						Src.Cancel();
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Size = WORD(AesSize);
+					Size = WORD(DecryptedSize);
 				}
 				if (!Src.Read(Data, Size)) {
-					if (RecVersion > 4) {
-						CryptDestroyKey(AesKey);
-						CryptReleaseContext(Aes, NULL);
-					}
 					return ERROR_CORRUPT_VIDEO;
 				}
 				MainWnd::Progress_Set(i, Packets);
-			}
-			if (RecVersion > 4) {
-				CryptDestroyKey(AesKey);
-				CryptReleaseContext(Aes, NULL);
 			}
 		}
 		else {
