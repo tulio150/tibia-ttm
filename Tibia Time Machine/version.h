@@ -2,7 +2,7 @@
 #include <windows.h>
 
 #define RES_VERSION 6,4,0,0
-#define STR_VERSION "643"
+#define STR_VERSION "6.43"
 #define TICKET "TTM64"
 
 #define SITE_URL "otland.net"

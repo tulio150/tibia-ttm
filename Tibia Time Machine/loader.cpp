@@ -37,7 +37,7 @@ BOOL Loader::Run(CONST HWND Parent, CONST UINT Title) {
 		return FALSE;
 	}
 	EnableWindow(Parent, FALSE);
-	Focus(ComboHost);
+	Focus(Title == TITLE_LOADER_OVERRIDE ? ComboVersion : ComboHost);
 	SetCursor(LoadCursor(NULL, IDC_ARROW));
 	MSG Message;
 	while (GetMessage(&Message, NULL, 0, 0)) {

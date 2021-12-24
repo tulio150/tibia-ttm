@@ -116,6 +116,38 @@ namespace Video {
 		}
 	}
 
+	WORD GetFileVersion(CONST LPCTSTR FileName) {
+		if (LPCTSTR Extension = PathFindExtension(FileName)) {
+			WORD Version;
+			ReadingFile File;
+			if (!DiffMemory(Extension, _T(".ttm"), TLEN(5))) {
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					if (File.ReadWord(Version)) {
+						if (Version >= 700 && Version <= LATEST) {
+							return Version;
+						}
+					}
+				}
+			}
+			else if (!DiffMemory(Extension, _T(".cam"), TLEN(5))) {
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					if (File.Skip(32)) {
+						BYTE VersionPart[4];
+						if (File.Read(VersionPart, 4)) {
+							if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
+								Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+								if (Version >= 700 && Version <= LATEST) {
+									return Version;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return NULL;
+	}
+
 	VOID SetFileTitle() {
 		TCHAR Title[MAX_PATH];
 		LPTSTR Name = PathFindFileName(FileName);
@@ -257,7 +289,7 @@ namespace Video {
 	VOID LastTimeChanged() {
 		MainWnd::ScrollInfo.nMax = Last->Time / 1000 + 59;
 	}
-	VOID AfterOpen(BOOL Override) {
+	VOID AfterOpen(BOOL Override) { //TODO: save truncated/corrupt videos
 		Current->EndSession();
 		if (Last) {
 			INT NewSession = ListBox_GetCount(MainWnd::ListSessions);
@@ -308,38 +340,6 @@ namespace Video {
 			return FALSE;
 		}
 	};
-
-	WORD GetFileVersion(CONST LPCTSTR FileName) {
-		if (LPCTSTR Extension = PathFindExtension(FileName)) {
-			WORD Version;
-			ReadingFile File;
-			if (!DiffMemory(Extension, _T(".ttm"), TLEN(5))) {
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.ReadWord(Version)) {
-						if (Version >= 700 && Version <= LATEST) {
-							return Version;
-						}
-					}
-				}
-			}
-			else if (!DiffMemory(Extension, _T(".cam"), TLEN(5))) {
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.Skip(32)) {
-						BYTE VersionPart[4];
-						if (File.Read(VersionPart, 4)) {
-							if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
-								Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-								if (Version >= 700 && Version <= LATEST) {
-									return Version;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		return NULL;
-	}
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
 		BufferedFile File;
@@ -715,7 +715,7 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			if (!Src.Read(Data, Size)) {
-				return ERROR_CORRUPT_VIDEO;
+				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(i, Packets);
 		}
@@ -776,23 +776,22 @@ namespace Video {
 	WORD GuessVersion(CONST BYTE Version, CONST BYTE Encryption) {
 		switch (Version) { //TODO: Guess version by packet contents
 			case 3:	switch (Encryption) {
-				case 1:	return 721;
-				case 2: return 730;
+				case 1:	return 721; // no encryption
+				case 2: return 730; // encryption mod 5
 			}
-			case 4: return 770;
-			case 5: return 772;
-			case 6: return 800;
+			case 4: return 770; // encryption mod 8
+			case 5: return 772; // encryption mod 8 + aes
+			case 6: return 800; // encryption mod 6 + aes
 		}
 		return 830;
 	}
 	UINT OpenREC(CONST HWND Parent) {
 		BufferedFile File;
-		DWORD FileSize = File.Open(FileName);
-		if (FileSize < 6) {
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion) || RecVersion < 3 || RecVersion > 6) { //3: > 7.2, 4: > 7.7, 5: > 7.72, 6: > 8.0
+		if (!File.ReadByte(RecVersion) || RecVersion < 3 || RecVersion > 6) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
@@ -851,7 +850,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) {
+				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) { // i have seen only two checksum miss in all my recs
 					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -871,7 +870,7 @@ namespace Video {
 					Size = WORD(DecryptedSize);
 				}
 				if (!Src.Read(Data, Size)) {
-					return ERROR_CORRUPT_VIDEO;
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
@@ -896,7 +895,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!Src.Read(Data, Size)) {
-					return ERROR_CORRUPT_VIDEO;
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
@@ -1005,7 +1004,7 @@ namespace Video {
 		Tibia::AutoPlay();
 		MainWnd::Progress_Stop();
 	}
-	VOID OpenDrop(CONST HDROP Drop) {
+	VOID OpenDrop(CONST HDROP Drop) { //TODO: single progress for all videos, ask tibicam version only once
 		BOOL Override = GetKeyState(VK_SHIFT) < 0;
 		MainWnd::Wait();
 		MainWnd::Progress_Start();
@@ -1018,7 +1017,7 @@ namespace Video {
 			if (!Last) {
 				CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 			}
-			if (CONST UINT Error = OpenMultiple(DetectFormat(), Override, MainWnd::Handle)) { //LPCSTR
+			if (CONST UINT Error = OpenMultiple(DetectFormat(), Override, MainWnd::Handle)) {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
 				if (Pos) {
