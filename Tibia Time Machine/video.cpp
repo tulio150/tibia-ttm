@@ -814,7 +814,7 @@ namespace Video {
 			HCRYPTPROV Aes;
 			HCRYPTKEY AesKey;
 			if (RecVersion > 4) {
-				if (!CryptAcquireContext(&Aes, NULL, NULL, PROV_RSA_AES, CRYPT_SILENT)) {
+				if (!CryptAcquireContext(&Aes, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				struct AES256KEYBLOB {
