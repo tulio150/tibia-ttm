@@ -120,7 +120,7 @@ namespace Video {
 		if (LPCTSTR Extension = PathFindExtension(FileName)) {
 			WORD Version;
 			ReadingFile File;
-			if (!DiffMemory(Extension, _T(".ttm"), TLEN(5))) {
+			if (!_tcsicmp(Extension, _T(".ttm"))) {
 				if (File.Open(FileName, OPEN_EXISTING)) {
 					if (File.ReadWord(Version)) {
 						if (Version >= 700 && Version <= LATEST) {
@@ -129,7 +129,7 @@ namespace Video {
 					}
 				}
 			}
-			else if (!DiffMemory(Extension, _T(".cam"), TLEN(5))) {
+			else if (!_tcsicmp(Extension, _T(".cam"))) {
 				if (File.Open(FileName, OPEN_EXISTING)) {
 					if (File.Skip(32)) {
 						BYTE VersionPart[4];
@@ -709,7 +709,7 @@ namespace Video {
 				Src.Cancel();
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it
+			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it (LZMA already checksums)
 			if (!Data) {
 				Src.Cancel();
 				return ERROR_CORRUPT_VIDEO;
@@ -850,7 +850,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) { // i have seen only two checksum miss in all my recs
+				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) { // i have seen only two checksum miss in all my recs, probably one real (should check?)
 					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -909,33 +909,15 @@ namespace Video {
 
 	DWORD DetectFormat() {
 		if (LPCTSTR Extension = PathFindExtension(FileName)) {
-			if (!DiffMemory(Extension, _T(".ttm"), TLEN(5))) {
+			if (!_tcsicmp(Extension, _T(".ttm"))) {
 				return FILETYPE_TTM;
 			}
-			if (!DiffMemory(Extension, _T(".cam"), TLEN(5))) {
+			if (!_tcsicmp(Extension, _T(".cam"))) {
 				return FILETYPE_CAM;
 			}
-			if (!DiffMemory(Extension, _T(".rec"), TLEN(5))) {
+			if (!_tcsicmp(Extension, _T(".rec"))) {
 				return FILETYPE_REC;
 			}
-			/*if (!DiffMemory(Extension, _T(".tmv"), TLEN(5))) {
-				return FILETYPE_TMV;
-			}
-			if (!DiffMemory(Extension, _T(".byn"), TLEN(5))) {
-				return FILETYPE_BYN;
-			}
-			if (!DiffMemory(Extension, _T(".trp"), TLEN(5))) {
-				return FILETYPE_TRP;
-			}
-			if (!DiffMemory(Extension, _T(".tcam"), TLEN(6))) {
-				return FILETYPE_TCAM;
-			}
-			if (!DiffMemory(Extension, _T(".xcam"), TLEN(6))) {
-				return FILETYPE_XCAM;
-			}
-			if (!DiffMemory(Extension, _T(".recording"), TLEN(11))) {
-				return FILETYPE_TIBIACAST;
-			}/**/
 		}
 		return NULL;
 	}
