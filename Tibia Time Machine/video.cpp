@@ -1152,8 +1152,8 @@ namespace Video {
 		SetWindowRedraw(MainWnd::ListSessions, FALSE);
 		ListBox_ResetContent(MainWnd::ListSessions);
 		FillSessionList();
-		ListBox_SetCurSel(MainWnd::ListSessions, LoginNumber);
 		SetWindowRedraw(MainWnd::ListSessions, TRUE);
+		ListBox_SetCurSel(MainWnd::ListSessions, LoginNumber);
 	}
 	Session *UnloadSession(CONST INT LoginNumber) {
 		if (Session *&NextLogin = (CurrentLogin->Prev ? *(Session **) &CurrentLogin->Prev->Next : First) = (Session *) CurrentLogin->Last->Next) {
@@ -1289,10 +1289,8 @@ namespace Video {
 		Current->Record(Proxy::Server);
 		State = RECORD;
 		TimeStr::SetTime(Current->Time);
-		SetWindowRedraw(MainWnd::ListSessions, FALSE);
 		ListBox_SetCurSel(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, Parser->Character->Name.Data));
 		ListBox_Enable(MainWnd::ListSessions, FALSE);
-		SetWindowRedraw(MainWnd::ListSessions, TRUE);
 		TCHAR LabelString[40];
 		LoadString(NULL, LABEL_RECORDING, LabelString, 40);
 		Static_SetText(MainWnd::LabelTime, LabelString);
@@ -1316,10 +1314,8 @@ namespace Video {
 			Current = Current->Next;
 			Current->Record(Proxy::Server);
 			LastTimeChanged();
-			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 			ListBox_SetItemData(MainWnd::ListSessions, ListBox_InsertString(MainWnd::ListSessions, LoginNumber, TimeStr::Set(LoginNumber, Last->Login->SessionTime(), Last->Time)), Last->Login);
-			SetWindowRedraw(MainWnd::ListSessions, TRUE);
 		}
 		else {
 			if (Parser->Pending || Parser->PlayerData || !Parser->FixTrade(Proxy::Server)) {
@@ -1355,9 +1351,9 @@ namespace Video {
 			TimeStr::SetTime(Last->Time);
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			ListBox_DeleteString(MainWnd::ListSessions, ListBox_GetCurSel(MainWnd::ListSessions));
-			ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			ListBox_Enable(MainWnd::ListSessions, TRUE);
 			SetWindowRedraw(MainWnd::ListSessions, TRUE);
+			ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			LoadString(NULL, LABEL_TOTAL_TIME, LabelString, 40);
 			Static_SetText(MainWnd::LabelTime, LabelString);
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
@@ -1391,9 +1387,9 @@ namespace Video {
 		SetWindowRedraw(MainWnd::ListSessions, FALSE);
 		ListBox_DeleteString(MainWnd::ListSessions, ListBox_GetCurSel(MainWnd::ListSessions));
 		ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), Current->Login->SessionTime(), Current->Time)), Current->Login);
-		ListBox_SetCurSel(MainWnd::ListSessions, 0);
 		ListBox_Enable(MainWnd::ListSessions, TRUE);
 		SetWindowRedraw(MainWnd::ListSessions, TRUE);
+		ListBox_SetCurSel(MainWnd::ListSessions, 0);
 	}
 
 	VOID Continue() {
