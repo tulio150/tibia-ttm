@@ -726,6 +726,139 @@ namespace Video {
 		return NULL;
 	}
 
+	UINT SaveTMV() {
+		GzipFile File;
+		if (!File.Open(FileName, "wb")) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteWord(2)) { // Tibiamovie file version
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteWord(Tibia::Version)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteDword(Last->Time)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteByte(NULL)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteDword(NULL)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		NeedParser ToSave;
+		PacketData* Packet = Parser->GetPacketData(*(Current = First));
+		DWORD PacketSize;
+		if ((PacketSize = Packet->RawSize()) > 0xFFFF) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.WriteWord(PacketSize)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.Write(Packet, PacketSize)) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		MainWnd::Progress_Set(0, Last->Time);
+		while (Current->Next) {
+			if (!File.WriteByte(NULL)) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (!File.WriteDword(Current->Next->Time - Current->Time)) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			Packet = Parser->GetPacketData(*(Current = Current->Next));
+			if ((PacketSize = Packet->RawSize()) > 0xFFFF) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (!File.WriteWord(PacketSize)) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (!File.Write(Packet, PacketSize)) {
+				File.Delete(FileName);
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		}
+		Changed = FALSE;
+		return NULL;
+	}
+	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
+		GzipFile File;
+		if (!File.Open(FileName, "rb")) {
+			return ERROR_CANNOT_OPEN_VIDEO_FILE;
+		}
+		WORD Version;
+		if (!File.ReadWord(Version) || Version != 2) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		if (!File.ReadWord(Version)) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		DWORD TotalTime;
+		if (!File.ReadDword(TotalTime)) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		if (Last) {
+			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) {
+				return ERROR_CANNOT_APPEND;
+			}
+		}
+		if (UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
+			return Error;
+		}
+		Converter Src;
+		Src.Time = 0;
+		for (BYTE Type; File.ReadByte(Type); ) {
+			if (!Type) {
+				DWORD Delay;
+				if (!File.ReadDword(Delay)) {
+					Src.Cancel();
+					return ERROR_CORRUPT_VIDEO;
+				}
+				Src.Time += Delay;
+				WORD Size;
+				if (!File.ReadWord(Size)) {
+					Src.Cancel();
+					return ERROR_CORRUPT_VIDEO;
+				}
+				BYTE Data[0xFFFF];
+				if (!File.Read(Data,Size)) {
+					Src.Cancel();
+					return ERROR_CORRUPT_VIDEO;
+				}
+				if (!Src.Read(Data, Size)) {
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+				MainWnd::Progress_Set(Src.Time, TotalTime);
+			}
+			else if (Type != 1) {
+				Src.Cancel();
+				return ERROR_CORRUPT_VIDEO;
+			}
+		}
+		if (!Src.Started()) {
+			return ERROR_CORRUPT_VIDEO;
+		}
+		if (Src.Time != TotalTime) {
+			CancelOpen();
+			return ERROR_CORRUPT_VIDEO;
+		}
+		AfterOpen(Override);
+		return NULL;
+	}
+
 	UINT SaveREC() {
 		WritingFile File;
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
@@ -915,6 +1048,9 @@ namespace Video {
 			if (!_tcsicmp(Extension, _T(".cam"))) {
 				return FILETYPE_CAM;
 			}
+			if (!_tcsicmp(Extension, _T(".tmv"))) {
+				return FILETYPE_TMV;
+			}
 			if (!_tcsicmp(Extension, _T(".rec"))) {
 				return FILETYPE_REC;
 			}
@@ -930,6 +1066,8 @@ namespace Video {
 			return Save();
 		case FILETYPE_CAM:
 			return SaveCAM();
+		case FILETYPE_TMV:
+			return SaveTMV();
 		case FILETYPE_REC:
 			return SaveREC();
 		case FILETYPE_ALL:
@@ -945,6 +1083,8 @@ namespace Video {
 			return Open(Override, Parent);
 		case FILETYPE_CAM:
 			return OpenCAM(Override, Parent);
+		case FILETYPE_TMV:
+			return OpenTMV(Override, Parent);
 		case FILETYPE_REC:
 			return OpenREC(Parent);
 		case FILETYPE_ALL:
@@ -1082,10 +1222,11 @@ namespace Video {
 	VOID FileDialog() {
 		TCHAR Formats[300];
 		SIZE_T Pos;
-		CopyMemory(Formats + (Pos = LoadString(NULL, FILETYPE_TTM, Formats, 235)), _T(" (*.ttm)\0*.ttm"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_CAM, Formats + (Pos += 15), 235 - Pos)), _T(" (*.cam)\0*.cam"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_REC, Formats + (Pos += 15), 235 - Pos)), _T(" (*.rec)\0*.rec"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_ALL, Formats + (Pos += 15), 235 - Pos)), _T("\0*.ttm;*.cam;*.rec"), TLEN(19));
+		CopyMemory(Formats + (Pos = LoadString(NULL, FILETYPE_TTM, Formats, 220)), _T(" (*.ttm)\0*.ttm"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_CAM, Formats + (Pos += 15), 220 - Pos)), _T(" (*.cam)\0*.cam"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_TMV, Formats + (Pos += 15), 220 - Pos)), _T(" (*.tmv)\0*.tmv"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_REC, Formats + (Pos += 15), 220 - Pos)), _T(" (*.rec)\0*.rec"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_ALL, Formats + (Pos += 15), 220 - Pos)), _T("\0*.ttm;*.cam;*.rec"), TLEN(19));
 		Formats[Pos + 19] = NULL;
 		TCHAR Title[20];
 		OPENFILENAME OpenFileName;

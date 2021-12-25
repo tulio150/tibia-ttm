@@ -4,6 +4,7 @@ STRINGTABLE
 {
 	FILETYPE_TTM "Tibia recording"
 	FILETYPE_CAM "Tibia recording - compressed"
+	FILETYPE_TMV "Tibia recording - old compressed"
 	FILETYPE_REC "Tibia recording - old format"
 	FILETYPE_ALL "All supported formats"
 	FILETYPE_EXE "Application"
@@ -122,6 +123,7 @@ LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
 {
 	FILETYPE_TTM "Gravação do Tibia"
 	FILETYPE_CAM "Gravação do Tibia - compactada"
+	FILETYPE_TMV "Gravação do Tibia - antiga compactada"
 	FILETYPE_REC "Gravação do Tibia - formato antigo"
 	FILETYPE_ALL "Todos os formatos suportados"
 	FILETYPE_EXE "Aplicativo"

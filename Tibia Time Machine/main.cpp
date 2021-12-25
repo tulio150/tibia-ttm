@@ -535,6 +535,10 @@ namespace MainWnd {
 				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 				RegCloseKey(RootKey);
 			}
+			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
+				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+				RegCloseKey(RootKey);
+			}
 			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.rec"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
 				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 				RegCloseKey(RootKey);
@@ -547,6 +551,10 @@ namespace MainWnd {
 				RegCloseKey(RootKey);
 			}
 			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".cam"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
+				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+				RegCloseKey(RootKey);
+			}
+			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
 				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 				RegCloseKey(RootKey);
 			}

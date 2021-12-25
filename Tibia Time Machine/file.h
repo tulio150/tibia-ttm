@@ -1,5 +1,6 @@
 #pragma once
 #include "framework.h"
+#include "zlib.h"
 
 #define SZ_OK 0
 
@@ -55,6 +56,8 @@ public:
 		return Size.LowPart;
 	}
 };
+
+
 
 struct ReadingFile: public GenericFile {
 	BOOL Open(CONST LPCTSTR FileName, DWORD Flag) {
@@ -115,6 +118,56 @@ struct WritingFile: public GenericFile {
 	}
 	BOOL WriteDword(CONST DWORD Data) CONST {
 		return Write(&Data, 4);
+	}
+};
+
+class GzipFile {
+	gzFile File;
+public:
+	GzipFile(): File(NULL) {}
+	~GzipFile() {
+		gzclose(File);
+	}
+
+	BOOL Open(CONST LPCSTR FileName, CONST LPCSTR Mode) {
+		return BOOL(File = gzopen(FileName, Mode));
+	}
+	BOOL Open(CONST LPCWSTR FileName, CONST LPCSTR Mode) {
+		CHAR FileNameA[MAX_PATH];
+		CopyMemoryW(FileNameA, FileName, MAX_PATH);
+		return Open(FileNameA, Mode);
+	}
+
+	VOID Delete(CONST LPCTSTR FileName) {
+		gzclose(File);
+		File = NULL;
+		DeleteFile(FileName);
+	}
+
+	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) CONST {
+		return gzwrite(File, Data, Size) == Size;
+	}
+	BOOL WriteByte(CONST BYTE Data) CONST {
+		return Write(&Data, 1);
+	}
+	BOOL WriteWord(CONST WORD Data) CONST {
+		return Write(&Data, 2);
+	}
+	BOOL WriteDword(CONST DWORD Data) CONST {
+		return Write(&Data, 4);
+	}
+
+	BOOL Read(CONST LPVOID Data, CONST DWORD Size) CONST {
+		return gzread(File, Data, Size) == Size;
+	}
+	BOOL ReadByte(BYTE& Data) CONST {
+		return Read(&Data, 1);
+	}
+	BOOL ReadWord(WORD& Data) CONST {
+		return Read(&Data, 2);
+	}
+	BOOL ReadDword(DWORD& Data) CONST {
+		return Read(&Data, 4);
 	}
 };
 

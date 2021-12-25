@@ -3,9 +3,10 @@
 
 #define FILETYPE_TTM 1
 #define FILETYPE_CAM 2
-#define FILETYPE_REC 3
-#define FILETYPE_ALL 4
-#define FILETYPE_EXE 5
+#define FILETYPE_TMV 3
+#define FILETYPE_REC 4
+#define FILETYPE_ALL 5
+#define FILETYPE_EXE 6
 
 #define MENU_OPTIONS 10
 #define MENU_PROXY 11
