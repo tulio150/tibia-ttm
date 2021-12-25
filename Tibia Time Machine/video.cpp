@@ -749,7 +749,7 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteDword(NULL)) {
+		if (!File.WriteDword(0)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -790,6 +790,12 @@ namespace Video {
 			if (!File.Write(Packet, PacketSize)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (Current == Current->Login) {
+				if (!File.WriteByte(1)) { // I'm adding markers to the start of the sessions
+					File.Delete(FileName);
+					return ERROR_CANNOT_SAVE_VIDEO_FILE;
+				}
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
