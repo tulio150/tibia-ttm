@@ -813,7 +813,7 @@ namespace Tibia {
 		}
 	}
 
-	DWORD WINAPI RunningProc(LPVOID Started) {
+	UINT WINAPI RunningProc(LPVOID Started) {
 		SetEvent(Started);
 		if (!WaitForSingleObjectEx(Proc.hProcess, INFINITE, TRUE)) {
 			PostMessage(MainWnd::Handle, WM_TIBIACLOSED, WPARAM(Running), LPARAM(Proc.hProcess));
@@ -959,7 +959,7 @@ namespace Tibia {
 		}
 		{
 			HANDLE Started = CreateEvent(NULL, TRUE, FALSE, NULL);
-			Running = CreateThread(NULL, 1, RunningProc, Started, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+			Running = HANDLE(_beginthreadex(NULL, 1, RunningProc, Started, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL));
 			if (!Running) {
 				TerminateProcess(Proc.hProcess, EXIT_FAILURE);
 				CloseHandle(Proc.hProcess);

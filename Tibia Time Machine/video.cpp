@@ -16,9 +16,9 @@
 namespace Video {
 	STATE State = IDLE;
 
-	Session *Login = NULL;
-	Packet *Current;
+	Session *First = NULL;
 	Packet *Last = NULL;
+	Packet *Current;
 
 	TCHAR FileName[MAX_PATH] = _T("");
 	BYTE Changed = FALSE;
@@ -152,8 +152,8 @@ namespace Video {
 		TCHAR Title[MAX_PATH];
 		LPTSTR Name = PathFindFileName(FileName);
 		SIZE_T NameLen = PathFindExtension(Name) - Name;
-		if (NameLen > MAX_PATH - 22) {
-			NameLen = MAX_PATH - 22;
+		if (NameLen > MAX_PATH - countof(MainWnd::Title)) {
+			NameLen = MAX_PATH - countof(MainWnd::Title);
 		}
 		CopyMemory(Title, Name, TLEN(NameLen));
 		CopyMemory(Title + NameLen, _T(" - "), TLEN(3));
@@ -192,7 +192,7 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
-		PacketData *Packet = Parser->GetPacketData(*(Current = Login));
+		PacketData *Packet = Parser->GetPacketData(*(Current = First));
 		if (!File.Write(Packet, Packet->RawSize())) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -268,20 +268,8 @@ namespace Video {
 		return NULL;
 	}
 
-	VOID CancelOpen() {
-		if (Last) {
-			Current = Last->Next;
-			Last->Next = NULL;
-		}
-		else {
-			Current = Login;
-			Login = NULL;
-		}
-		Unload();
-	}
-
 	VOID FillSessionList() {
-		Current = Login;
+		Current = First;
 		do {
 			ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
 		} while (Current = CurrentLogin->Last->Next);
@@ -289,7 +277,7 @@ namespace Video {
 	VOID LastTimeChanged() {
 		MainWnd::ScrollInfo.nMax = Last->Time / 1000 + 59;
 	}
-	VOID AfterOpen(BOOL Override) { //TODO: save truncated/corrupt videos
+	VOID AfterOpen(BOOL Override) {
 		Current->EndSession();
 		if (Last) {
 			INT NewSession = ListBox_GetCount(MainWnd::ListSessions);
@@ -321,7 +309,19 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	struct VideoPacket : protected NeedParser, PacketBase {
+	VOID CancelOpen() {
+		if (Last) {
+			Current = Last->Next;
+			Last->Next = NULL;
+		}
+		else {
+			Current = First;
+			First = NULL;
+		}
+		Unload();
+	}
+
+	struct FilePacket : private NeedParser, PacketBase {
 		BOOL Read(BufferedFile& File) {
 			Set(File.Skip(2));
 			if (!P || !P->Size || !File.Skip(P->Size)) {
@@ -371,7 +371,7 @@ namespace Video {
 		if (!File.ReadDword(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		VideoPacket Src;
+		FilePacket Src;
 		if (!Src.Read(File) || !Parser->PlayerData) {
 			return ERROR_CORRUPT_VIDEO;
 		}
@@ -388,7 +388,7 @@ namespace Video {
 			Current = Last->Next = new(std::nothrow) Session(Last);
 		}
 		else {
-			Current = Login = new(std::nothrow) Session();
+			Current = First = new(std::nothrow) Session();
 		}
 		if (!Src.Record() || !Parser->FixEnterGame(*Current)) {
 			CancelOpen();
@@ -443,7 +443,7 @@ namespace Video {
 		return NULL;
 	}
 
-	class Converter : private VideoPacket {
+	class Converter : private NeedParser, PacketBase {
 		WORD PacketSize;
 		WORD Want;
 		LPBYTE Store;
@@ -458,10 +458,10 @@ namespace Video {
 			delete[] LPBYTE(P);
 		}
 		static Session *&Started() {
-			return Last ? *(Session **) &Last->Next : Login;
+			return Last ? *(Session **) &Last->Next : First;
 		}
 		static VOID Cancel() {
-			if (Session *&First = Started()) {
+			if (Session*& First = Started()) {
 				Current = First;
 				First = NULL;
 				Unload();
@@ -508,7 +508,7 @@ namespace Video {
 							}
 						}
 						else {
-							if (!(Current = Login = new(std::nothrow) Session())) {
+							if (!(Current = First = new(std::nothrow) Session())) {
 								return FALSE;
 							}
 						}
@@ -595,13 +595,13 @@ namespace Video {
 		}
 		NeedParser ToSave;
 		DWORD Packets = 58;
-		DWORD PacketSize = Parser->GetPacketData(*Login)->RawSize();
+		DWORD PacketSize = Parser->GetPacketData(*First)->RawSize();
 		if (PacketSize > 0xFFFF) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		DWORD Size = 16 + PacketSize;
-		for (Current = Login; Current = Current->Next; Packets++) {
+		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -622,7 +622,7 @@ namespace Video {
 		Encoder.WriteByte(GetRECVersion()); // Ignored by all players
 		Encoder.WriteByte(2); // Ignored by most players, 2 means encrypted format, but without encryption
 		Encoder.WriteDword(Packets);
-		Current = Login;
+		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			PacketSize = Packet->RawSize();
@@ -740,7 +740,7 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		DWORD Packets = 1;
-		for (Current = Login; Current = Current->Next; Packets++) {
+		for (Current = First; Current = Current->Next; Packets++) {
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			if (Packets == INFINITE) {
 				File.Delete(FileName);
@@ -752,7 +752,7 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
-		Current = Login;
+		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			DWORD PacketSize = Packet->RawSize();
@@ -850,7 +850,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum) || Checksum != Adler32(Data, Data + Size)) { // i have seen only two checksum miss in all my recs, probably one real (should check?)
+				if (!File.ReadDword(Checksum)  || Checksum != Adler32(Data, Data + Size)) {
 					Src.Cancel();
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -1100,13 +1100,12 @@ namespace Video {
 		OpenFileName.lpstrInitialDir = NULL;
 		OpenFileName.lpstrDefExt = _T("ttm");
 		OpenFileName.lpfnHook = FileDialogHook;
-		OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK;
 		OpenFileName.FlagsEx = 0;
 		if (Last) {
 			LoadString(NULL, TITLE_SAVE_VIDEO, Title, 20);
 			OpenFileName.nFilterIndex = FILETYPE_TTM;
 			OpenFileName.lCustData = LPARAM(SaveMultiple);
-			OpenFileName.Flags |= OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOTESTFILECREATE | OFN_PATHMUSTEXIST;
+			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOTESTFILECREATE | OFN_PATHMUSTEXIST;
 			PathRenameExtension(FileName, _T(".ttm"));
 			GetSaveFileName(&OpenFileName);
 		}
@@ -1114,7 +1113,7 @@ namespace Video {
 			LoadString(NULL, TITLE_OPEN_VIDEO, Title, 20);
 			OpenFileName.nFilterIndex = FILETYPE_ALL;
 			OpenFileName.lCustData = LPARAM(OpenMultiple);
-			OpenFileName.Flags |= OFN_FILEMUSTEXIST;
+			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_FILEMUSTEXIST;
 			if (GetOpenFileName(&OpenFileName)) {
 				Tibia::AutoPlay();
 			}
@@ -1141,7 +1140,7 @@ namespace Video {
 	INT GetSession() {
 		CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 		if (LoginNumber < 0) {
-			Current = Login;
+			Current = First;
 			return 0;
 		}
 		Current = (Packet *) ListBox_GetItemData(MainWnd::ListSessions, LoginNumber);
@@ -1157,7 +1156,7 @@ namespace Video {
 		SetWindowRedraw(MainWnd::ListSessions, TRUE);
 	}
 	Session *UnloadSession(CONST INT LoginNumber) {
-		if (Session *&NextLogin = (CurrentLogin->Prev ? *(Session **) &CurrentLogin->Prev->Next : Login) = (Session *) CurrentLogin->Last->Next) {
+		if (Session *&NextLogin = (CurrentLogin->Prev ? *(Session **) &CurrentLogin->Prev->Next : First) = (Session *) CurrentLogin->Last->Next) {
 			NextLogin->Prev = CurrentLogin->Prev;
 			CurrentLogin->Last->Next = NULL;
 			PlayedTime = NextLogin->Time - Current->Time;
@@ -1178,8 +1177,8 @@ namespace Video {
 	}
 
 	VOID UnloadClose() {
-		Current = Login;
-		Login = NULL;
+		Current = First;
+		First = NULL;
 		Last = NULL;
 		Unload();
 		Changed = FALSE;
@@ -1201,7 +1200,7 @@ namespace Video {
 	}
 	VOID Delete() {
 		if (Last) {
-			if (Login->Last->Next) {
+			if (First->Last->Next) {
 				UnloadSession(GetSession());
 			}
 			else {
@@ -1269,7 +1268,7 @@ namespace Video {
 	}
 	VOID WaitDelete() {
 		if (Last) {
-			if (Login->Last->Next) {
+			if (First->Last->Next) {
 				UnloadSession(GetSession());
 			}
 			else {
@@ -1283,7 +1282,7 @@ namespace Video {
 		if (Last && 1000 > INFINITE - Last->Time || !Parser->FixEnterGame(Proxy::Server)) {
 			return Proxy::Server.Discard();
 		}
-		if (!(Current = Last ? Last->Next = new(std::nothrow) Session(Last) : Login = new(std::nothrow) Session())) {
+		if (!(Current = Last ? Last->Next = new(std::nothrow) Session(Last) : First = new(std::nothrow) Session())) {
 			return Proxy::Server.Discard();
 		}
 		Timer::Start();
@@ -1366,7 +1365,7 @@ namespace Video {
 			Button_SetText(MainWnd::ButtonSub, LabelString);
 		}
 		else {
-			Login = NULL;
+			First = NULL;
 			Unload();
 			TimeStr::SetTimeSeconds(0);
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
@@ -1472,7 +1471,7 @@ namespace Video {
 			if (Current->Login->Time) {
 				ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			}
-			Current = Login;
+			Current = First;
 			if (!SyncOne()) {
 				return FALSE;
 			}
@@ -1752,7 +1751,7 @@ namespace Video {
 			SetPlayed();
 		}
 		else {
-			Current = Login;
+			Current = First;
 			PlayedTime = 0;
 			SetPlayed();
 			if (ListBox_GetCurSel(MainWnd::ListSessions)) {
@@ -1979,7 +1978,7 @@ namespace Video {
 	}
 
 	VOID PlayDelete() {
-		if (!Login->Last->Next) {
+		if (!First->Last->Next) {
 			return PlayClose();
 		}
 		Current = UnloadSession(StartSkipSession());
@@ -2160,7 +2159,7 @@ namespace Video {
 			if (Current->Login->Time) {
 				ListBox_SetCurSel(MainWnd::ListSessions, 0);
 			}
-			Current = Login;
+			Current = First;
 			Tibia::Redraw();
 			if (!ScrollSyncOne()) {
 				return FALSE;
@@ -2397,7 +2396,7 @@ namespace Video {
 		ScrollSession();
 	}
 	VOID ScrollDelete() {
-		if (!Login->Last->Next) {
+		if (!First->Last->Next) {
 			return PlayClose();
 		}
 		Current = UnloadSession(GetSession());

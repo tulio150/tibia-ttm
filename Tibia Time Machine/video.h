@@ -51,9 +51,9 @@ namespace Video {
 		}
 	};
 
-	extern Session *Login;
-	extern Packet *Current;
+	extern Session *First;
 	extern Packet *Last;
+	extern Packet *Current;
 
 	VOID HandleTibiaClosed();
 	VOID OpenCmd(CONST LPCTSTR CmdLine);

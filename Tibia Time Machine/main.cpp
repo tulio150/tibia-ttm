@@ -819,7 +819,7 @@ namespace MainWnd {
 		case WM_HSCROLL: switch (GET_WM_HSCROLL_ID(Wp, Lp)) {
 		case IDSCROLL: return OnScroll(GET_WM_HSCROLL_CODE(Wp, Lp)), 0;
 		} return 0;
-		case WM_CTLCOLORLISTBOX: if (HWND(Lp) == ListSessions && (!Video::Login)) {
+		case WM_CTLCOLORLISTBOX: if (HWND(Lp) == ListSessions && (!Video::First)) {
 			return LRESULT(ListBG);
 		} break;
 		case WM_MOUSEWHEEL: return OnWheel(GET_WHEEL_DELTA_WPARAM(Wp)), 0;
