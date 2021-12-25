@@ -119,8 +119,8 @@ namespace Video {
 	WORD GetFileVersion(CONST LPCTSTR FileName) {
 		if (LPCTSTR Extension = PathFindExtension(FileName)) {
 			WORD Version;
-			ReadingFile File;
 			if (!_tcsicmp(Extension, _T(".ttm"))) {
+				ReadingFile File;
 				if (File.Open(FileName, OPEN_EXISTING)) {
 					if (File.ReadWord(Version)) {
 						if (Version >= 700 && Version <= LATEST) {
@@ -130,6 +130,7 @@ namespace Video {
 				}
 			}
 			else if (!_tcsicmp(Extension, _T(".cam"))) {
+				ReadingFile File;
 				if (File.Open(FileName, OPEN_EXISTING)) {
 					if (File.Skip(32)) {
 						BYTE VersionPart[4];
@@ -139,6 +140,18 @@ namespace Video {
 								if (Version >= 700 && Version <= LATEST) {
 									return Version;
 								}
+							}
+						}
+					}
+				}
+			}
+			else if (!_tcsicmp(Extension, _T(".tmv"))) {
+				GzipFile File;
+				if (File.Open(FileName, "rb")) {
+					if (File.ReadWord(Version)) {
+						if (File.ReadWord(Version)) {
+							if (Version >= 700 && Version <= LATEST) {
+								return Version;
 							}
 						}
 					}
@@ -311,20 +324,24 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	VOID CancelOpen() {
-		if (Last) {
-			Current = Last->Next;
-			Last->Next = NULL;
+	Session *&Started() {
+		return Last ? *(Session**)&Last->Next : First;
+	}
+	VOID CancelOpen(CONST BOOL Override) {
+		if (Session *&Start = Started()) {
+			if (Override) {
+				AfterOpen(TRUE);
+			}
+			else {
+				Current = Start;
+				Start = NULL;
+				Unload();
+			}
 		}
-		else {
-			Current = First;
-			First = NULL;
-		}
-		Unload();
 	}
 
 	struct FilePacket : private NeedParser, PacketBase {
-		BOOL Read(BufferedFile& File) {
+		BOOL Read(BufferedFile &File) {
 			Set(File.Skip(2));
 			if (!P || !P->Size || !File.Skip(P->Size)) {
 				return FALSE;
@@ -332,12 +349,13 @@ namespace Video {
 			Parser->SetPacket(*this);
 			return Parser->GetPacketType();
 		}
-		BOOL Record() {
-			if (Current) {
-				if (LPBYTE Data = Parser->AllocPacket(*Current, P->Size)) {
+		BOOL Record(Packet *CONST Next) {
+			if (Next) {
+				if (LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
 					CopyMemory(Data, P->Data, P->Size);
 					return TRUE;
 				}
+				delete Next;
 			}
 			return FALSE;
 		}
@@ -387,58 +405,74 @@ namespace Video {
 				return ERROR_CANNOT_APPEND;
 			}
 			TotalTime += Last->Time + 1000;
-			Current = Last->Next = new(std::nothrow) Session(Last);
+			if (!Src.Record(Last->Next = new(std::nothrow) Session(Last))) {
+				Last->Next = NULL;
+				return ERROR_CANNOT_OPEN_VIDEO_FILE;
+			}
+			Current = Last->Next;
 		}
 		else {
-			Current = First = new(std::nothrow) Session();
+			if (!Src.Record(First = new(std::nothrow) Session())) {
+				First = NULL;
+				return ERROR_CANNOT_OPEN_VIDEO_FILE;
+			}
+			Current = First;
 		}
-		if (!Src.Record() || !Parser->FixEnterGame(*Current)) {
-			CancelOpen();
+		if (!Parser->FixEnterGame(*Current)) {
+			CancelOpen(Override);
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		MainWnd::Progress_Set(0, TotalTime);
-		for (BYTE EnterGame; File.ReadByte(EnterGame); MainWnd::Progress_Set(Current->Time, TotalTime)) {
+		for (BYTE EnterGame; File.ReadByte(EnterGame); Current = Current->Next) {
+			MainWnd::Progress_Set(Current->Time, TotalTime);
 			switch (EnterGame) {
 				case FALSE: {
 					WORD Delay;
 					if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
-						CancelOpen();
+						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
 					if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
-						CancelOpen();
+						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Current = Current->Next = new(std::nothrow) Packet(Current, Delay);
-					if (!Src.Record() || !Parser->FixTrade(*Current)) {
-						CancelOpen();
+					if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
+						Current->Next = NULL;
+						CancelOpen(Override);
+						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					}
+					if (!Parser->FixTrade(*Current->Next)) {
+						CancelOpen(Override);
 						return ERROR_CANNOT_OPEN_VIDEO_FILE;
 					}
 				} break;
 				case TRUE: {
 					if (1000 > TotalTime - Current->Time) {
-						CancelOpen();
+						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
 					Current->EndSession();
 					if (!Src.Read(File) || !Parser->EnterGame) {
-						CancelOpen();
+						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Current = Current->Next = new(std::nothrow) Session(Current);
-					if (!Src.Record() || !Parser->FixEnterGame(*Current)) {
-						CancelOpen();
+					if (!Src.Record(Current->Next = new(std::nothrow) Session(Current))) {
+						Current->Next = NULL;
+						CancelOpen(Override);
+						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					}
+					if (!Parser->FixEnterGame(*Current->Next)) {
+						CancelOpen(Override);
 						return ERROR_CANNOT_OPEN_VIDEO_FILE;
 					}
 				} break;
 				default: {
-					CancelOpen();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 			}
 		}
 		if (Current->Time != TotalTime) {
-			CancelOpen();
+			CancelOpen(Override);
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
@@ -459,17 +493,7 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		static Session *&Started() {
-			return Last ? *(Session **) &Last->Next : First;
-		}
-		static VOID Cancel() {
-			if (Session*& First = Started()) {
-				Current = First;
-				First = NULL;
-				Unload();
-			}
-		}
-		BOOL Read(LPBYTE Data, DWORD Avail) {
+		BOOL Read(LPBYTE Data, DWORD Avail, CONST BOOL Override) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
 				Data += Want;
@@ -478,7 +502,7 @@ namespace Video {
 					if (PacketSize) {
 						Store = Parser->AllocPacket(*this, PacketSize);
 						if (!Store) {
-							Cancel();
+							CancelOpen(Override);
 							return FALSE;
 						}
 						Want = PacketSize;
@@ -490,22 +514,22 @@ namespace Video {
 				}
 				else {
 					if (!Parser->GetPacketType()) {
-						Cancel();
+						CancelOpen(Override);
 						return FALSE;
 					}
 					if (Parser->EnterGame) {
 						if (!Parser->FixEnterGame(*this)) {
-							Cancel();
+							CancelOpen(Override);
 							return FALSE;
 						}
 						if (Current) {
 							if (1000 > INFINITE - Current->Time) {
-								Cancel();
+								CancelOpen(Override);
 								return FALSE;
 							}
 							Current->EndSession();
 							if (!(Current = Current->Next = new(std::nothrow) Session(Current))) {
-								Cancel();
+								CancelOpen(Override);
 								return FALSE;
 							}
 						}
@@ -524,7 +548,7 @@ namespace Video {
 					}
 					else {
 						if (!Parser->FixTrade(*this)) {
-							CancelOpen();
+							CancelOpen(Override);
 							return FALSE;
 						}
 						DWORD Delay = Time - LastTime;
@@ -535,7 +559,7 @@ namespace Video {
 							Delay = INFINITE - Current->Time;
 						}
 						if (!(Current = Current->Next = new(std::nothrow) Packet(Current, WORD(Delay)))) {
-							CancelOpen();
+							CancelOpen(Override);
 							return FALSE;
 						}
 						Current->Record(*this);
@@ -704,24 +728,24 @@ namespace Video {
 		for (DWORD i = 0; i < Packets; i++) {
 			WORD Size;
 			if (!File.ReadWord(Size)) {
-				Src.Cancel();
+				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
 			if (!File.ReadDword(Src.Time)) {
-				Src.Cancel();
+				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
 			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it (LZMA already checksums)
 			if (!Data) {
-				Src.Cancel();
+				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (!Src.Read(Data, Size)) {
+			if (!Src.Read(Data, Size, Override)) {
 				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(i, Packets);
 		}
-		if (!Src.Started()) {
+		if (!Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
@@ -799,6 +823,10 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
+		if (!File.Flush()) {
+			File.Delete(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
 		Changed = FALSE;
 		return NULL;
 	}
@@ -832,35 +860,35 @@ namespace Video {
 			if (!Type) {
 				DWORD Delay;
 				if (!File.ReadDword(Delay)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				Src.Time += Delay;
 				WORD Size;
 				if (!File.ReadWord(Size)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				BYTE Data[0xFFFF];
 				if (!File.Read(Data,Size)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Read(Data, Size)) {
+				if (!Src.Read(Data, Size, Override)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				MainWnd::Progress_Set(Src.Time, TotalTime);
 			}
 			else if (Type != 1) {
-				Src.Cancel();
+				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
 		}
-		if (!Src.Started()) {
+		if (!Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (Src.Time != TotalTime) {
-			CancelOpen();
+			CancelOpen(Override);
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
@@ -926,7 +954,7 @@ namespace Video {
 		}
 		return 830;
 	}
-	UINT OpenREC(CONST HWND Parent) {
+	UINT OpenREC(BOOL Override, CONST HWND Parent) {
 		BufferedFile File;
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
@@ -980,21 +1008,21 @@ namespace Video {
 			for (DWORD i = 0; i < Packets; i++) {
 				WORD Size;
 				if (!File.ReadWord(Size)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum)  || Checksum != Adler32(Data, Data + Size)) {
-					Src.Cancel();
+				if (!File.ReadDword(Checksum)  || !Override && Checksum != Adler32(Data, Data + Size)) {
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				CHAR Key = Size + Src.Time - 31, Rem;
@@ -1007,12 +1035,12 @@ namespace Video {
 				if (RecVersion > 4 && Size) {
 					DWORD DecryptedSize = Size;
 					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &DecryptedSize) || !DecryptedSize) {
-						Src.Cancel();
+						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
 					Size = WORD(DecryptedSize);
 				}
-				if (!Src.Read(Data, Size)) {
+				if (!Src.Read(Data, Size, Override)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				MainWnd::Progress_Set(i, Packets);
@@ -1025,25 +1053,25 @@ namespace Video {
 			for (DWORD i = 0; i < Packets; i++) {
 				DWORD Size;
 				if (!File.ReadDword(Size)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadDword(Src.Time)) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				LPBYTE Data = File.Skip(Size);
 				if (!Data) {
-					Src.Cancel();
+					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Read(Data, Size)) {
+				if (!Src.Read(Data, Size, Override)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
 		}
-		if (!Src.Started()) {
+		if (!Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(TRUE);
@@ -1096,7 +1124,7 @@ namespace Video {
 		case FILETYPE_TMV:
 			return OpenTMV(Override, Parent);
 		case FILETYPE_REC:
-			return OpenREC(Parent);
+			return OpenREC(Override, Parent);
 		case FILETYPE_ALL:
 			return OpenMultiple(DetectFormat(), Override, Parent);
 		}

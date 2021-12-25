@@ -137,6 +137,9 @@ public:
 		CopyMemoryW(FileNameA, FileName, MAX_PATH);
 		return Open(FileNameA, Mode);
 	}
+	BOOL Flush() {
+		return gzflush(File, Z_FINISH) == Z_OK;
+	}
 
 	VOID Delete(CONST LPCTSTR FileName) {
 		gzclose(File);
