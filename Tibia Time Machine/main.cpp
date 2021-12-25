@@ -10,6 +10,8 @@ namespace MainWnd {
 	UINT TaskbarRestart;
 	ITaskbarList3* TaskbarButton = NULL;
 	DWORD Progress = 0;
+	DWORD Progress_Segment = 0;
+	DWORD Progress_Segments = 1;
 
 	POINT Base;
 
@@ -136,6 +138,8 @@ namespace MainWnd {
 	}
 	VOID Progress_Set(DWORD Set, DWORD End) {
 		if (TaskbarButton) {
+			Set += End * Progress_Segment;
+			End *= Progress_Segments;
 			if (End >= 100) {
 				Set /= End / 100;
 				End = 100;

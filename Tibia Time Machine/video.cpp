@@ -231,6 +231,7 @@ namespace Video {
 			if (!Last) {
 				if (!Tibia::Running) {
 					Tibia::SetHost(Version, HostLen, Host, Port);
+					MainWnd::Progress_Pause();
 					if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
 						if (Version < 700 || Version > LATEST) {
 							Tibia::Version = Version < 700 ? 700 : LATEST;
@@ -242,6 +243,7 @@ namespace Video {
 					else {
 						Override = Tibia::Version != Version || Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen) || Tibia::Port != Port;
 					}
+					MainWnd::Progress_Start();
 				}
 				else {
 					Override = Tibia::Version != Version || Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen) || Tibia::Port != Port;
@@ -933,9 +935,11 @@ namespace Video {
 		}
 		if (!Last && !Tibia::Running) {
 			Tibia::SetHost(GuessVersion(RecVersion, Encryption), NULL, LPCTSTR(NULL), PORT);
+			MainWnd::Progress_Pause();
 			if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
 				return ERROR_TIBICAM_VERSION;
 			}
+			MainWnd::Progress_Start();
 		}
 		DWORD Packets;
 		Converter Src;
@@ -1126,7 +1130,7 @@ namespace Video {
 		Tibia::AutoPlay();
 		MainWnd::Progress_Stop();
 	}
-	VOID OpenDrop(CONST HDROP Drop) { //TODO: single progress for all videos, ask tibicam version only once
+	VOID OpenDrop(CONST HDROP Drop) {
 		BOOL Override = GetKeyState(VK_SHIFT) < 0;
 		MainWnd::Wait();
 		MainWnd::Progress_Start();
@@ -1135,10 +1139,12 @@ namespace Video {
 		CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 		TCHAR ErrorString[1400];
 		SIZE_T Pos = 0;
+		MainWnd::Progress_Segments = DragQueryFile(Drop, INFINITE, NULL, NULL);
 		for (UINT i = 0; DragQueryFile(Drop, i, FileName, MAX_PATH); i++) {
 			if (!Last) {
 				CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 			}
+			MainWnd::Progress_Segment = i;
 			if (CONST UINT Error = OpenMultiple(DetectFormat(), Override, MainWnd::Handle)) {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
@@ -1160,6 +1166,8 @@ namespace Video {
 				SHAddToRecentDocs(SHARD_PATH, FileName);
 			}
 		}
+		MainWnd::Progress_Segment = 0;
+		MainWnd::Progress_Segments = 1;
 		MainWnd::Done();
 		CopyMemory(FileName, FirstName, TLEN(MAX_PATH));
 		if (Pos) {
@@ -1222,12 +1230,12 @@ namespace Video {
 	VOID FileDialog() {
 		TCHAR Formats[300];
 		SIZE_T Pos;
-		CopyMemory(Formats + (Pos = LoadString(NULL, FILETYPE_TTM, Formats, 220)), _T(" (*.ttm)\0*.ttm"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_CAM, Formats + (Pos += 15), 220 - Pos)), _T(" (*.cam)\0*.cam"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_TMV, Formats + (Pos += 15), 220 - Pos)), _T(" (*.tmv)\0*.tmv"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_REC, Formats + (Pos += 15), 220 - Pos)), _T(" (*.rec)\0*.rec"), TLEN(15));
-		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_ALL, Formats + (Pos += 15), 220 - Pos)), _T("\0*.ttm;*.cam;*.rec"), TLEN(19));
-		Formats[Pos + 19] = NULL;
+		CopyMemory(Formats + (Pos = LoadString(NULL, FILETYPE_TTM, Formats, 214)), _T(" (*.ttm)\0*.ttm"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_CAM, Formats + (Pos += 15), 214 - Pos)), _T(" (*.cam)\0*.cam"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_TMV, Formats + (Pos += 15), 214 - Pos)), _T(" (*.tmv)\0*.tmv"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_REC, Formats + (Pos += 15), 214 - Pos)), _T(" (*.rec)\0*.rec"), TLEN(15));
+		CopyMemory(Formats + (Pos += LoadString(NULL, FILETYPE_ALL, Formats + (Pos += 15), 214 - Pos)), _T("\0*.ttm;*.cam;*.tmv;*.rec"), TLEN(25));
+		Formats[Pos + 25] = NULL;
 		TCHAR Title[20];
 		OPENFILENAME OpenFileName;
 		OpenFileName.lStructSize = sizeof(OPENFILENAME);

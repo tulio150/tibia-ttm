@@ -121,6 +121,9 @@ namespace MainWnd {
 	CONST INT Width = 46;
 	CONST INT Height = 10;
 
+	extern DWORD Progress_Segment;
+	extern DWORD Progress_Segments;
+
 	extern POINT Base;
 	extern HWND Handle;
 
