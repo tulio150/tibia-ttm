@@ -2405,6 +2405,7 @@ namespace Video {
 	}
 
 	VOID ForcePause() {
+		SetPlayed();
 		if (Speed > PAUSED) {
 			TimerSetPaused(PlayedTime >= Last->Time);
 		}
@@ -2420,7 +2421,6 @@ namespace Video {
 
 	VOID PlayFirstPacket() {
 		PlayedTime = Current->Login->Time;
-		SetPlayed();
 		ForcePause();
 		Current = Current->Login;
 		if (!SyncOne()) {
@@ -2429,7 +2429,6 @@ namespace Video {
 	}
 	VOID PlayLastPacket() {
 		PlayedTime = Current->Login->Last->Time;
-		SetPlayed();
 		ForcePause();
 		if (Current->IsLast()) {
 			if (!SendPing()) {
@@ -2467,7 +2466,6 @@ namespace Video {
 			SessionTimeChanged(LoginNumber);
 			Current = Backup;
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Sync()) {
 			return Logout();
@@ -2506,7 +2504,6 @@ namespace Video {
 			SessionTimeChanged(LoginNumber);
 			Current = Backup;
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Proxy::SendClientMessage(ID_GAME_INFO, MESSAGE_EDIT_END)) {
 			return Logout();
@@ -2540,7 +2537,6 @@ namespace Video {
 			SessionTimeChanged(LoginNumber);
 			Current = Backup;
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Proxy::SendClientMessage(ID_GAME_INFO, MESSAGE_EDIT_FAST)) {
 			return Logout();
@@ -2587,7 +2583,6 @@ namespace Video {
 			SessionTimeChanged(LoginNumber);
 			Current = Backup;
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Proxy::SendClientMessage(ID_GAME_INFO, MESSAGE_EDIT_SLOW)) {
 			return Logout();
@@ -2619,7 +2614,6 @@ namespace Video {
 			SessionTimeChanged(LoginNumber);
 			Current = Backup;
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Sync()) {
 			return Logout();
@@ -2655,7 +2649,6 @@ namespace Video {
 				Current = Backup;
 			}
 		}
-		SetPlayed();
 		ForcePause();
 		if (!Proxy::SendClientMessage(ID_GAME_INFO, MESSAGE_EDIT_DELAY)) {
 			return Logout();
