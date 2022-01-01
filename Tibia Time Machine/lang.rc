@@ -123,8 +123,8 @@ LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
 {
 	FILETYPE_TTM "Gravação do Tibia"
 	FILETYPE_CAM "Gravação do Tibia - compactada"
-	FILETYPE_TMV "Gravação do Tibia - antiga compactada"
-	FILETYPE_REC "Gravação do Tibia - formato antigo"
+	FILETYPE_TMV "Gravação do Tibia - antiga e compactada"
+	FILETYPE_REC "Gravação do Tibia - antiga"
 	FILETYPE_ALL "Todos os formatos suportados"
 	FILETYPE_EXE "Aplicativo"
 

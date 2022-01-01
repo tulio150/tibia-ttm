@@ -276,7 +276,7 @@ namespace Video {
 					return ERROR_WRONG_VERSION;
 				}
 				if (Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen)) {
-					return ERROR_WRONG_VERSION;
+					return ERROR_WRONG_HOST;
 				}
 			}
 		}
@@ -425,26 +425,6 @@ namespace Video {
 		for (BYTE EnterGame; File.ReadByte(EnterGame); Current = Current->Next) {
 			MainWnd::Progress_Set(Current->Time, TotalTime);
 			switch (EnterGame) {
-				case FALSE: {
-					WORD Delay;
-					if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
-						Current->Next = NULL;
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-					if (!Parser->FixTrade(*Current->Next)) {
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-				} break;
 				case TRUE: {
 					if (1000 > TotalTime - Current->Time) {
 						CancelOpen(Override);
@@ -461,6 +441,26 @@ namespace Video {
 						return ERROR_CANNOT_OPEN_VIDEO_FILE;
 					}
 					if (!Parser->FixEnterGame(*Current->Next)) {
+						CancelOpen(Override);
+						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					}
+				} break;
+				case FALSE: {
+					WORD Delay;
+					if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
+						CancelOpen(Override);
+						return ERROR_CORRUPT_VIDEO;
+					}
+					if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
+						CancelOpen(Override);
+						return ERROR_CORRUPT_VIDEO;
+					}
+					if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
+						Current->Next = NULL;
+						CancelOpen(Override);
+						return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					}
+					if (!Parser->FixTrade(*Current->Next)) {
 						CancelOpen(Override);
 						return ERROR_CANNOT_OPEN_VIDEO_FILE;
 					}
@@ -503,6 +503,7 @@ namespace Video {
 						Store = Parser->AllocPacket(*this, PacketSize);
 						if (!Store) {
 							CancelOpen(Override);
+							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
 						Want = PacketSize;
@@ -515,26 +516,31 @@ namespace Video {
 				else {
 					if (!Parser->GetPacketType()) {
 						CancelOpen(Override);
+						Time = ERROR_CORRUPT_VIDEO;
 						return FALSE;
 					}
 					if (Parser->EnterGame) {
 						if (!Parser->FixEnterGame(*this)) {
 							CancelOpen(Override);
+							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
 						if (Current) {
 							if (1000 > INFINITE - Current->Time) {
 								CancelOpen(Override);
+								Time = Last ? ERROR_CANNOT_APPEND : ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
 							Current->EndSession();
 							if (!(Current = Current->Next = new(std::nothrow) Session(Current))) {
 								CancelOpen(Override);
+								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
 						}
 						else {
 							if (!(Current = First = new(std::nothrow) Session())) {
+								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
 						}
@@ -543,12 +549,14 @@ namespace Video {
 					else if (Parser->Pending || Parser->PlayerData) {
 						Discard(); //pending packet, just get data (should not exist, but who knwows)
 					}
-					else if (!Started())  {
-						return FALSE; //common packet without a login packet first (usually wrong version selected)
-					}
 					else {
+						if (!Started())  {
+							Time = ERROR_CORRUPT_VIDEO;
+							return FALSE; // common packet without a login packet first (usually wrong version selected)
+						}
 						if (!Parser->FixTrade(*this)) {
 							CancelOpen(Override);
+							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
 						DWORD Delay = Time - LastTime;
@@ -560,6 +568,7 @@ namespace Video {
 						}
 						if (!(Current = Current->Next = new(std::nothrow) Packet(Current, WORD(Delay)))) {
 							CancelOpen(Override);
+							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
 						Current->Record(*this);
@@ -578,10 +587,9 @@ namespace Video {
 		}
 	};
 
-	BYTE GetRECVersion() {
-		return Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : 3;
+	BYTE RECVersion() {
+		return Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
 	}
-
 	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
 		MainWnd::Progress_Set(DecSize, TotalSize);
 		return 0;
@@ -645,7 +653,7 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		Encoder.WriteByte(GetRECVersion()); // Ignored by all players
+		Encoder.WriteByte(RECVersion()); // Ignored by all players
 		Encoder.WriteByte(2); // Ignored by most players, 2 means encrypted format, but without encryption
 		Encoder.WriteDword(Packets);
 		Current = First;
@@ -713,10 +721,10 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion)) { // fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+		if (!File.ReadByte(RecVersion)) { // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // all CAMs use encrypted flag, but without encryption (not sure if should be checking)
+		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // Fake TibiCAM encryption flag (but not really encrypted)
 			return ERROR_CORRUPT_VIDEO;
 		}
 		DWORD Packets;
@@ -735,13 +743,13 @@ namespace Video {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPBYTE Data = File.Skip(DWORD(Size) + 4); // ignore checksum, recorders misuse and miscalculate it (LZMA already checksums)
+			LPBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, recorders misuse it (LZMA already checksums)
 			if (!Data) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
 			if (!Src.Read(Data, Size, Override)) {
-				return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				return Src.Time;
 			}
 			MainWnd::Progress_Set(i, Packets);
 		}
@@ -757,7 +765,7 @@ namespace Video {
 		if (!File.Open(FileName, "wb")) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteWord(2)) { // Tibiamovie file version
+		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -792,7 +800,6 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		MainWnd::Progress_Set(0, Last->Time);
 		while (Current->Next) {
 			if (!File.WriteByte(NULL)) {
 				File.Delete(FileName);
@@ -802,6 +809,7 @@ namespace Video {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			if ((PacketSize = Packet->RawSize()) > 0xFFFF) {
 				File.Delete(FileName);
@@ -821,8 +829,9 @@ namespace Video {
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
-			MainWnd::Progress_Set(Current->Time, Last->Time);
+			
 		}
+		MainWnd::Progress_Start();
 		if (!File.Flush()) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -846,7 +855,7 @@ namespace Video {
 		if (!File.ReadDword(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (Last) {
+		if (Last && !Override) { // Should really check here?
 			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) {
 				return ERROR_CANNOT_APPEND;
 			}
@@ -856,10 +865,10 @@ namespace Video {
 		}
 		Converter Src;
 		Src.Time = 0;
-		for (BYTE Type; File.ReadByte(Type); ) {
+		for (BYTE Type; File.ReadByte(Type); MainWnd::Progress_Set(Src.Time, TotalTime)) {
 			if (!Type) {
 				DWORD Delay;
-				if (!File.ReadDword(Delay)) {
+				if (!File.ReadDword(Delay) || !Override && Delay > TotalTime - Src.Time) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -875,9 +884,8 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!Src.Read(Data, Size, Override)) {
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					return Src.Time;
 				}
-				MainWnd::Progress_Set(Src.Time, TotalTime);
 			}
 			else if (Type != 1) {
 				CancelOpen(Override);
@@ -900,7 +908,7 @@ namespace Video {
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteByte(GetRECVersion())) { // this version control is what made me create ttm
+		if (!File.WriteByte(RECVersion())) { // this version control is what made me create ttm
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -942,17 +950,19 @@ namespace Video {
 		Changed = FALSE;
 		return NULL;
 	}
-	WORD GuessVersion(CONST BYTE Version, CONST BYTE Encryption) {
-		switch (Version) { //TODO: Guess version by packet contents
+	WORD GuessVersion(CONST BYTE RecVersion, CONST BYTE Encryption) {
+		switch (RecVersion) { //TODO: Guess version by packet contents
+			case 2: return 700; // never found one, let's use for older-than-tibicam recordings
 			case 3:	switch (Encryption) {
-				case 1:	return 721; // no encryption
+				case 1:	return 710; // no encryption
 				case 2: return 730; // encryption mod 5
 			}
 			case 4: return 770; // encryption mod 8
 			case 5: return 772; // encryption mod 8 + aes
 			case 6: return 800; // encryption mod 6 + aes
+			case 7: return 830; // versions that tibicam never supported
 		}
-		return 830;
+		return LATEST; //never happens
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
 		BufferedFile File;
@@ -960,7 +970,7 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion) || RecVersion < 3 || RecVersion > 6) {
+		if (!File.ReadByte(RecVersion) || RecVersion < 2 || RecVersion > 7) { // We are supporting more versions than tibicam itself
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
@@ -1041,7 +1051,7 @@ namespace Video {
 					Size = WORD(DecryptedSize);
 				}
 				if (!Src.Read(Data, Size, Override)) {
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					return Src.Time;
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
@@ -1066,7 +1076,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!Src.Read(Data, Size, Override)) {
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+					return Src.Time;
 				}
 				MainWnd::Progress_Set(i, Packets);
 			}
@@ -1171,7 +1181,7 @@ namespace Video {
 		INT SessionNumber = ListBox_GetCount(MainWnd::ListSessions);
 		TCHAR FirstName[MAX_PATH];
 		CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
-		TCHAR ErrorString[1400];
+		TCHAR ErrorString[900];
 		SIZE_T Pos = 0;
 		MainWnd::Progress_Segments = DragQueryFile(Drop, INFINITE, NULL, NULL);
 		for (UINT i = 0; DragQueryFile(Drop, i, FileName, MAX_PATH); i++) {
@@ -1183,7 +1193,7 @@ namespace Video {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
 				if (Pos) {
-					if (Pos + FileSize + 4 + RSTRING(Error).Len > 1400) {
+					if (Pos + FileSize + 4 + RSTRING(Error).Len > 900) {
 						continue;
 					}
 					ErrorString[Pos++] = '\n';
@@ -1191,7 +1201,7 @@ namespace Video {
 				}
 				CopyMemory(ErrorString + Pos, ErrorFile, TLEN(FileSize));
 				ErrorString[(Pos += FileSize)++] = '\n';
-				Pos += LoadString(NULL, Error, ErrorString + Pos, 1400 - Pos);
+				Pos += LoadString(NULL, Error, ErrorString + Pos, 900 - Pos);
 				if (Error == ERROR_TIBICAM_VERSION) {
 					break;
 				}
@@ -1211,8 +1221,8 @@ namespace Video {
 			MessageBox(MainWnd::Handle, ErrorString, TitleString, MB_ICONSTOP);
 		}
 		if (Last) {
-			SetFileTitle();
 			if (ListBox_GetCount(MainWnd::ListSessions) > SessionNumber) {
+				SetFileTitle();
 				ListBox_SetCurSel(MainWnd::ListSessions, SessionNumber);
 				Tibia::AutoPlay();
 			}
