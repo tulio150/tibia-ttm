@@ -588,7 +588,7 @@ namespace Video {
 	};
 
 	BYTE RECVersion() {
-		return Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
+		return Tibia::Version >= 1080 ? 11 : Tibia::Version >= 1058 ? 10 : Tibia::Version >= 1054 ? 9 : Tibia::Version >= 980 ? 8 : Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
 	}
 	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
 		MainWnd::Progress_Set(DecSize, TotalSize);
@@ -961,6 +961,10 @@ namespace Video {
 			case 5: return 772; // encryption mod 8 + aes
 			case 6: return 800; // encryption mod 6 + aes
 			case 7: return 830; // versions that tibicam never supported
+			case 8: return 980; // when the enter game packet changed
+			case 9: return 1054;
+			case 10: return 1058;
+			case 11: return 1080;
 		}
 		return LATEST; //never happens
 	}
@@ -970,7 +974,7 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion) || RecVersion < 2 || RecVersion > 7) { // We are supporting more versions than tibicam itself
+		if (!File.ReadByte(RecVersion) || RecVersion < 2) { // We are supporting more versions than tibicam itself
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
@@ -1295,18 +1299,18 @@ namespace Video {
 		OpenFileName.lpfnHook = FileDialogHook;
 		OpenFileName.FlagsEx = 0;
 		if (Last) {
-			LoadString(NULL, TITLE_SAVE_VIDEO, Title, 20);
 			OpenFileName.nFilterIndex = FILETYPE_TTM;
 			OpenFileName.lCustData = LPARAM(SaveMultiple);
 			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOTESTFILECREATE | OFN_PATHMUSTEXIST;
 			PathRenameExtension(FileName, _T(".ttm"));
+			LoadString(NULL, TITLE_SAVE_VIDEO, Title, 20);
 			GetSaveFileName(&OpenFileName);
 		}
 		else {
-			LoadString(NULL, TITLE_OPEN_VIDEO, Title, 20);
 			OpenFileName.nFilterIndex = FILETYPE_ALL;
 			OpenFileName.lCustData = LPARAM(OpenMultiple);
 			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_FILEMUSTEXIST;
+			LoadString(NULL, TITLE_OPEN_VIDEO, Title, 20);
 			if (GetOpenFileName(&OpenFileName)) {
 				Tibia::AutoPlay();
 			}

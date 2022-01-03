@@ -1420,7 +1420,7 @@ BOOL Parser980::GetPacketType() {
 	TradeBug = FALSE;
 	do {
 		switch (GetByte()) {
-			case 0xE8: //version?????
+			case 0xE8: //version? (seen on 1100 - gunzodus)
 				Trading = FALSE;
 				return EnterGame = TRUE;
 			case 0x0A:
