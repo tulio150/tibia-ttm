@@ -166,18 +166,30 @@ GZip compressed data:
 ---------------------------------------------------------------------
 TibiaCast .recording:
 
+[1 bytes] TibiaCast version
+[1 bytes] Tibia version
+21: 1036
+22: 1038
+23: 1038
+24: 1041
+30: 1079
 DEFLATE compressed data:
-	[2 bytes] TibiaCast version (0x03 0x05)
+	if version > 4 || version == 4 && tibia > 4
+		[4 bytes] Unknown
+	if tibia > 8
+		[1 bytes] Unknown
 	Loop:
 		[4 bytes] Received time
 		[4 bytes] Data size
 		0: End of recording
 		[x bytes] Data
 			[1 bytes] Data type
-			6: Unknown
+			6: Close shop window
 				[1 bytes] Constant (1)
 			7: Battlelist + First packets
-				[1 bytes] Number of creatures
+				if tibia > 9
+					[1 bytes] Unknown
+				[2 bytes] Number of creatures
 				For:
 					A valid Tibia 0x61 (Add unknown creature) packet, depends on protocol version
 					Used to replace packets 0x62 (Add known creature) and 0x63 (Turn creature) if unkwnown
@@ -190,6 +202,11 @@ DEFLATE compressed data:
 				For:
 					[2 bytes] Packet size
 					[x bytes] Packet data
+			9: Message
+				[2 bytes] Title size
+				[x bytes] Title
+				[2 bytes] Message size
+				[x bytes] Message data
 
 ---------------------------------------------------------------------
 Tibia XCAM .xcam:
