@@ -116,51 +116,6 @@ namespace Video {
 		}
 	}
 
-	WORD GetFileVersion(CONST LPCTSTR FileName) {
-		if (LPCTSTR Extension = PathFindExtension(FileName)) {
-			WORD Version;
-			if (!_tcsicmp(Extension, _T(".ttm"))) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.ReadWord(Version)) {
-						if (Version >= 700 && Version <= LATEST) {
-							return Version;
-						}
-					}
-				}
-			}
-			else if (!_tcsicmp(Extension, _T(".cam"))) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.Skip(32)) {
-						BYTE VersionPart[4];
-						if (File.Read(VersionPart, 4)) {
-							if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
-								Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-								if (Version >= 700 && Version <= LATEST) {
-									return Version;
-								}
-							}
-						}
-					}
-				}
-			}
-			else if (!_tcsicmp(Extension, _T(".tmv"))) {
-				GzipFile File;
-				if (File.Open(FileName, "rb")) {
-					if (File.ReadWord(Version)) {
-						if (File.ReadWord(Version)) {
-							if (Version >= 700 && Version <= LATEST) {
-								return Version;
-							}
-						}
-					}
-				}
-			}
-		}
-		return NULL;
-	}
-
 	VOID SetFileTitle() {
 		TCHAR Title[MAX_PATH];
 		LPTSTR Name = PathFindFileName(FileName);
@@ -1234,14 +1189,59 @@ namespace Video {
 		MainWnd::Progress_Stop();
 	}
 
-	BOOL GetDesktop(CONST LPCTSTR Append) {
-		if (SHGetSpecialFolderPath(NULL, FileName, CSIDL_DESKTOPDIRECTORY, TRUE)) {
-			PathAppend(FileName, Append);
-			return TRUE;
+	WORD GetFileVersion(CONST LPCTSTR FileName) {
+		if (LPCTSTR Extension = PathFindExtension(FileName)) {
+			WORD Version;
+			if (!_tcsicmp(Extension, _T(".ttm"))) {
+				ReadingFile File;
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					if (File.ReadWord(Version)) {
+						if (Version >= 700 && Version <= LATEST) {
+							return Version;
+						}
+					}
+				}
+			}
+			else if (!_tcsicmp(Extension, _T(".cam"))) {
+				ReadingFile File;
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					if (File.Skip(32)) {
+						BYTE VersionPart[4];
+						if (File.Read(VersionPart, 4)) {
+							if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
+								Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+								if (Version >= 700 && Version <= LATEST) {
+									return Version;
+								}
+							}
+						}
+					}
+				}
+			}
+			else if (!_tcsicmp(Extension, _T(".tmv"))) {
+				GzipFile File;
+				if (File.Open(FileName, "rb")) {
+					if (File.ReadWord(Version)) {
+						if (File.ReadWord(Version)) {
+							if (Version >= 700 && Version <= LATEST) {
+								return Version;
+							}
+						}
+					}
+				}
+			}
+			else if (!_tcsicmp(Extension, _T(".rec"))) {
+				ReadingFile File;
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					if (File.ReadWord(Version)) {
+						return GuessVersion(LOBYTE(Version), HIBYTE(Version));
+					}
+				}
+			}
 		}
-		GetFullPathName(Append, MAX_PATH, FileName, NULL);
-		return FALSE;
+		return NULL;
 	}
+
 	UINT_PTR CALLBACK FileDialogHook(HWND Dialog, UINT Message, WPARAM Wp, LPARAM Lp) {
 		switch (Message) {
 			case WM_NOTIFY:
@@ -1322,6 +1322,14 @@ namespace Video {
 		if (Changed) {
 			FileDialog();
 		}
+	}
+	BOOL GetDesktop(CONST LPCTSTR Append) {
+		if (SHGetSpecialFolderPath(NULL, FileName, CSIDL_DESKTOPDIRECTORY, TRUE)) {
+			PathAppend(FileName, Append);
+			return TRUE;
+		}
+		GetFullPathName(Append, MAX_PATH, FileName, NULL);
+		return FALSE;
 	}
 	VOID SaveRecovery() {
 		if (Changed) {
