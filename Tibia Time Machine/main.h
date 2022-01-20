@@ -166,3 +166,5 @@ namespace PlayBar {
 }
 
 VOID ErrorBox(CONST UINT Error, CONST UINT Title);
+
+extern HCRYPTPROV WinCrypt;

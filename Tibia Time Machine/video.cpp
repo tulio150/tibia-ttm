@@ -952,24 +952,18 @@ namespace Video {
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				HCRYPTPROV Aes;
-				if (!CryptAcquireContext(&Aes, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
 				struct AES256KEYBLOB {
 					BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
 					DWORD Size = 32;
 					BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
 				} AesBlob;
-				if (!CryptImportKey(Aes, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
-					CryptReleaseContext(Aes, NULL);
+				if (!CryptImportKey(WinCrypt, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				DWORD AesMode = CRYPT_MODE_ECB;
 				if (!CryptSetKeyParam(RecKey, KP_MODE, LPBYTE(&AesMode), NULL)) {
 					CryptDestroyKey(RecKey);
 					RecKey = NULL;
-					CryptReleaseContext(Aes, NULL);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 			}

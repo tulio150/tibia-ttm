@@ -981,13 +981,14 @@ VOID ErrorBox(CONST UINT Error, CONST UINT Title) {
 	MainWnd::Progress_Stop();
 }
 
+HCRYPTPROV WinCrypt;
 BOOL InitFramework() {
 	CONST INITCOMMONCONTROLSEX ControlsInfo = { sizeof(INITCOMMONCONTROLSEX), ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS /*| ICC_LISTVIEW_CLASSES | ICC_PROGRESS_CLASS | ICC_BAR_CLASSES | ICC_TAB_CLASSES*/ };
 	if (!InitCommonControlsEx(&ControlsInfo)) {
 		InitCommonControls();
 	}
 	WSADATA Data;
-	return  SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED)) && !WSAStartup(MAKEWORD(2, 2), &Data);
+	return  SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED)) && !WSAStartup(MAKEWORD(2, 2), &Data) && CryptAcquireContext(&WinCrypt, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT);
 }
 INT APIENTRY _tWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPTSTR CmdLine, INT CmdShow) {
 	if (!InitFramework()) {
@@ -1003,6 +1004,7 @@ INT APIENTRY _tWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPTSTR CmdLin
 		}
 		MainWnd::Destroy();
 	}
+	CryptReleaseContext(WinCrypt, NULL);
 	WSACleanup();
 	CoUninitialize();
 	return (INT)Message.wParam;
