@@ -96,7 +96,7 @@ BOOL Parser830::ParsePacketBase(CONST PacketBase &Packet) CONST{
 		return FALSE;
 	}
 	DWORD Checksum = GetDword();
-	return Checksum == CalculateChecksum();
+	return Checksum == GetChecksum();
 }
 LPBYTE Parser700::AllocPacketBase(PacketBase &Packet, CONST WORD Size) CONST{
 	return CreatePacket(Packet, Size);
@@ -112,7 +112,7 @@ VOID Parser700::FinishPacketBase(PacketBase &Packet) CONST{
 VOID Parser830::FinishPacketBase(PacketBase &Packet) CONST{
 	SetPacket(Packet);
 	DWORD& Checksum = GetDword();
-	Checksum = CalculateChecksum();
+	Checksum = GetChecksum();
 }
 
 BOOL Parser700::ParsePacket(CONST PacketBase &Packet) CONST{
@@ -157,7 +157,7 @@ VOID Parser830::FinishPacket(PacketBase &Packet) CONST{
 	SetPacket(Packet);
 	DWORD &Checksum = GetDword();
 	Encrypt();
-	Checksum = CalculateChecksum();
+	Checksum = GetChecksum();
 }
 
 VOID Parser700::RewindPacket(CONST PacketBase &Packet) CONST{

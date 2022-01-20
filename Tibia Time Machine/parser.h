@@ -307,7 +307,7 @@ protected:
 	BOOL ParseCloseShop() CONST;
 };
 class Parser830: public Parser820 {
-	static DWORD CalculateChecksum() {
+	static DWORD GetChecksum() {
 		return adler32(1, Data, End - Data);
 	}
 public:
