@@ -988,7 +988,7 @@ BOOL InitFramework() {
 		InitCommonControls();
 	}
 	WSADATA Data;
-	return  SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED)) && !WSAStartup(MAKEWORD(2, 2), &Data) && CryptAcquireContext(&WinCrypt, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT);
+	return SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED)) && !WSAStartup(MAKEWORD(2, 2), &Data) && CryptAcquireContext(&WinCrypt, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT);
 }
 INT APIENTRY _tWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPTSTR CmdLine, INT CmdShow) {
 	if (!InitFramework()) {
