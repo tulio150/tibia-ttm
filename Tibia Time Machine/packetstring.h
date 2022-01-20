@@ -23,11 +23,11 @@ struct PSTRING {
 	}
 };
 struct RSTRING {
-	WORD Len;
+	DWORD Len;
 	LPCWSTR Data;
 
 	RSTRING(): Len(0) {}
-	RSTRING(CONST UINT ID): Len(WORD(LoadStringW(NULL, ID, LPWSTR(&Data), 0))) {}
+	RSTRING(CONST UINT ID): Len(LoadStringW(NULL, ID, LPWSTR(&Data), 0)) {}
 };
 struct STRING {
 	WORD Len;

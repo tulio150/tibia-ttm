@@ -180,7 +180,7 @@ PacketData *Parser830::GetPacketData(PacketBase &Src) CONST{
 
 VOID Parser700::ConstructMessage(CONST BYTE Type, CONST UINT ID) CONST {
 	RSTRING Str(ID);
-	if (AllocPacket(Proxy::Extra, 3 + Str.Len)) {
+	if (Str.Len <= 1000 && AllocPacket(Proxy::Extra, 3 + Str.Len)) {
 		GetByte() = Type;
 		GetString(Str.Len) = Str.Data;
 		FinishPacket(Proxy::Extra);
@@ -391,13 +391,13 @@ VOID Parser700::ConstructVideoLoginBase(CONST RSTRING &Str) {
 }
 VOID Parser700::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (CreatePacket(Proxy::Extra, 24 + Str.Len)) {
+	if (Str.Len <= 40 && CreatePacket(Proxy::Extra, 24 + Str.Len)) {
 		ConstructVideoLoginBase(Str);
 	}
 }
 VOID Parser710::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (AllocPacket(Proxy::Extra, 26 + Str.Len)) {
+	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 26 + Str.Len)) {
 		ConstructVideoLoginBase(Str);
 		GetWord() = 0; // Premium days
 		FinishPacket(Proxy::Extra);
@@ -405,7 +405,7 @@ VOID Parser710::ConstructVideoLogin() {
 }
 VOID Parser971::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (AllocPacket(Proxy::Extra, 27 + Str.Len)) {
+	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 27 + Str.Len)) {
 		ConstructVideoLoginBase(PLAY_VIDEO);
 		GetByte() = FALSE;
 		GetWord() = 0; // Premium days
@@ -427,7 +427,7 @@ VOID Parser1012::ConstructVideoLoginBase(CONST RSTRING &Str) {
 }
 VOID Parser1012::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (AllocPacket(Proxy::Extra, 37 + Str.Len)) {
+	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 37 + Str.Len)) {
 		ConstructVideoLoginBase(Str);
 		GetWord() = 0; // Premium days
 		FinishPacket(Proxy::Extra);
@@ -440,7 +440,7 @@ VOID Parser1074::ConstructVideoLogin() {
 VOID Parser1080::ConstructVideoLogin() {
 	SessionKey.Wipe();
 	RSTRING Str(PLAY_VIDEO);
-	if (AllocPacket(Proxy::Extra, 40 + Str.Len)) {
+	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 40 + Str.Len)) {
 		ConstructVideoLoginBase(Str);
 		GetByte() = FALSE; //Premium
 		GetDword() = 0; // Premium time
@@ -450,7 +450,7 @@ VOID Parser1080::ConstructVideoLogin() {
 VOID Parser1082::ConstructVideoLogin() {
 	SessionKey.Wipe();
 	RSTRING Str(PLAY_VIDEO);
-	if (AllocPacket(Proxy::Extra, 41 + Str.Len)) {
+	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 41 + Str.Len)) {
 		ConstructVideoLoginBase(Str);
 		GetByte() = FALSE; //Frozen
 		GetByte() = FALSE; //Premium
