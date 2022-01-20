@@ -583,24 +583,23 @@ namespace Video {
 			}
 		}
 		NeedParser ToSave;
-		DWORD Packets = 58;
-		DWORD PacketSize = Parser->GetPacketData(*First)->RawSize();
-		if (PacketSize > 0xFFFF) {
+		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16;
+		if (Size > 0x1000F) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		DWORD Size = 16 + PacketSize;
+		DWORD Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			PacketSize = Parser->GetPacketData(*Current)->RawSize();
-			if (PacketSize > 0xFFFF || PacketSize + 10 > 0x7FFFFFFF - Size) {
+			DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize() + 10;
+			if (PacketSize > 0x10009 || PacketSize > 0x7FFFFFFF - Size) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			Size += 10 + PacketSize;
+			Size += PacketSize;
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		BufferedFile Encoder;
@@ -609,16 +608,16 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Encoder.WriteByte(RECVersion()); // Ignored by all players
-		Encoder.WriteByte(2); // Ignored by most players, 2 means encrypted format, but without encryption
+		Encoder.WriteByte(2); // It mimics an encrypted REC file, but without encryption
 		Encoder.WriteDword(Packets);
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			PacketSize = Packet->RawSize();
-			Encoder.WriteWord(PacketSize);
+			Size = Packet->RawSize();
+			Encoder.WriteWord(Size);
 			Encoder.WriteDword(Current->Time);
-			Encoder.Write(Packet, PacketSize);
-			Encoder.WriteDword(0xFAFAFAFA); // Checksum is ignored, repetitive pattern compresses to a smaller video
+			Encoder.Write(Packet, Size);
+			Encoder.WriteDword(crc32(0, Packet->Data, Packet->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		if (!Encoder.LZMA_Compress(File, LZMA_Callback)) {
@@ -687,7 +686,7 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		Packets -= 57;
-		Converter Src;
+		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
 		for (DWORD i = 0; i < Packets; i++) {
 			WORD Size;
 			if (!File.ReadWord(Size)) {
@@ -698,7 +697,7 @@ namespace Video {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, recorders misuse it (LZMA already checksums)
+			LPBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			if (!Data) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
@@ -990,7 +989,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum)  || !Override && Checksum != Adler32(Data, Data + Size)) {
+				if (!File.ReadDword(Checksum)  || !Override && Checksum != adler32(1, Data, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}

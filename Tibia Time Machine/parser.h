@@ -3,13 +3,12 @@
 #include "file.h"
 #include "packet.h"
 #include "packetstring.h"
+#include "zlib.h"
 
 #define ID_LOGIN_INFO 0x0B
 #define ID_LOGIN_ERROR Tibia::Version >= 1076 ? 0x0B : 0x0A
 #define ID_GAME_INFO 0x15
 #define ID_GAME_ERROR 0x14
-
-DWORD Adler32(LPBYTE Data, CONST LPBYTE End);
 
 namespace Direction {
 	enum TYPE : BYTE {
@@ -308,6 +307,9 @@ protected:
 	BOOL ParseCloseShop() CONST;
 };
 class Parser830: public Parser820 {
+	static DWORD CalculateChecksum() {
+		return adler32(1, Data, End - Data);
+	}
 public:
 	STRING Account;
 	~Parser830() {

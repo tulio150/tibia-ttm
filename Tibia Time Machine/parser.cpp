@@ -95,7 +95,8 @@ BOOL Parser830::ParsePacketBase(CONST PacketBase &Packet) CONST{
 	if (Overflow(4)) {
 		return FALSE;
 	}
-	return GetDword() == Adler32(Data, End);
+	DWORD Checksum = GetDword();
+	return Checksum == CalculateChecksum();
 }
 LPBYTE Parser700::AllocPacketBase(PacketBase &Packet, CONST WORD Size) CONST{
 	return CreatePacket(Packet, Size);
@@ -111,7 +112,7 @@ VOID Parser700::FinishPacketBase(PacketBase &Packet) CONST{
 VOID Parser830::FinishPacketBase(PacketBase &Packet) CONST{
 	SetPacket(Packet);
 	DWORD& Checksum = GetDword();
-	Checksum = Adler32(Data, End);
+	Checksum = CalculateChecksum();
 }
 
 BOOL Parser700::ParsePacket(CONST PacketBase &Packet) CONST{
@@ -156,7 +157,7 @@ VOID Parser830::FinishPacket(PacketBase &Packet) CONST{
 	SetPacket(Packet);
 	DWORD &Checksum = GetDword();
 	Encrypt();
-	Checksum = Adler32(Data, End);
+	Checksum = CalculateChecksum();
 }
 
 VOID Parser700::RewindPacket(CONST PacketBase &Packet) CONST{
@@ -2254,12 +2255,4 @@ VOID Parser761::Encrypt() CONST {
 			Block[1] += (((Block[0] << 4) ^ (Block[0] >> 5)) + Block[0]) ^ (Sum + EncryptionKey[(Sum >> 11) & 3]);
 		}
 	}
-}
-
-DWORD Adler32(LPBYTE Data, CONST LPBYTE End) {
-	DWORD a = 1, b = 0;
-	while (Data < End) {
-		b = (b + (a = (a + *(Data++)) % 65521)) % 65521;
-	}
-	return a | (b << 16);
 }
