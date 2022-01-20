@@ -23,7 +23,7 @@ Key features:
 	-Commands on Tibia console for fullscreen playing
 	-Set video light for old Tibia versions
 	
-Note: Some antivirus are flagging the app as malicius, I suspect that is because of the memory editing functions. I already submitted false positive reports to some companies, but then some other gets triggered. That way, on virustotal, it is certain that some minor antivirus will still detect it as malicious. I strongly recommend isntalling visual studio, cloning the git, inspecting the sources and recompiling yourself. Not only for my app, but for any one that you use. If cloned, the compiled binary should match the release 1:1.
+Note: Some antivirus are flagging the app as malicious, I suspect that is because of the memory editing functions. I already submitted false positive reports to some companies, but then some other gets triggered. That way, on virustotal, it is certain that some minor antivirus will still detect it as malicious. I strongly recommend isntalling visual studio, cloning the git, inspecting the sources and recompiling yourself. Not only for my app, but for any one that you use. If cloned, the compiled binary should match the release 1:1.
 
 Don't trust, verify
 	-Satoshi Nakamoto
