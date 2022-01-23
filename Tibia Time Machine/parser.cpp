@@ -375,8 +375,8 @@ VOID Parser761::ForwardLogin() CONST {
 }
 VOID Parser1072::ForwardLogin() CONST {
 	FinishRSA();
-	Data = End - 128; // skip extra data and go to the last 128-byte RSA block
-	ProxyRSA();
+	//Data = End - 128; // skip extra data and go to the last 128-byte RSA block
+	//ProxyRSA(); // needed on global only
 	FinishPacketBase(Proxy::Client);
 }
 
@@ -2232,10 +2232,10 @@ VOID Parser761::FinishRSA() {
 	Msg.Export(RSA_Data, 32);
 }
 VOID Parser761::ProxyRSA() {
-	/*BIGWORD Msg(Data, 32);
+	BIGWORD Msg(Data, 32);
 	Msg.PowMod(Tibia::RSA::Private, 32, Tibia::RSA::Modulus, 32);
 	Msg.PowMod(Tibia::RSA::Public, Tibia::RSA::Modulus, 32); //global?
-	Msg.Export(Data, 32);/**/
+	Msg.Export(Data, 32);
 }
 
 VOID Parser761::Decrypt() CONST {
