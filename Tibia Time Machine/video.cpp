@@ -16,7 +16,7 @@
 namespace Video {
 	STATE State = IDLE;
 
-	Session *First = NULL;
+	Packet *First = NULL;
 	Packet *Last = NULL;
 	Packet *Current;
 
@@ -30,6 +30,7 @@ namespace Video {
 	HCRYPTKEY RecKey = NULL;
 
 #define CurrentLogin ((Session *) Current)
+#define FirstSession ((Session *) First)
 
 	VOID Packet::EndSession()  {
 		Login->Last = this;
@@ -168,13 +169,13 @@ namespace Video {
 		MainWnd::Progress_Set(0, Last->Time);
 		while (Current->Next) {
 			if (Current->IsLast()) {
-				if (!File.WriteByte(1)) {
+				if (!File.WriteByte(TRUE)) {
 					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
 			else {
-				if (!File.WriteByte(0)) {
+				if (!File.WriteByte(FALSE)) {
 					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
@@ -279,11 +280,11 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	Session *&Started() {
-		return Last ? *(Session**)&Last->Next : First;
+	Packet *&Started() {
+		return Last ? Last->Next : First;
 	}
 	VOID CancelOpen(CONST BOOL Override) {
-		if (Session *&Start = Started()) {
+		if (Packet *&Start = Started()) {
 			if (Override) {
 				AfterOpen(TRUE);
 			}
@@ -304,13 +305,14 @@ namespace Video {
 			Parser->SetPacket(*this);
 			return Parser->GetPacketType();
 		}
-		BOOL Record(Packet *CONST Next) {
+		BOOL Record(Packet *&CONST Next) {
 			if (Next) {
 				if (LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
 					CopyMemory(Data, P->Data, P->Size);
 					return TRUE;
 				}
 				delete Next;
+				Next = NULL;
 			}
 			return FALSE;
 		}
@@ -361,14 +363,12 @@ namespace Video {
 			}
 			TotalTime += Last->Time + 1000;
 			if (!Src.Record(Last->Next = new(std::nothrow) Session(Last))) {
-				Last->Next = NULL;
 				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			Current = Last->Next;
 		}
 		else {
 			if (!Src.Record(First = new(std::nothrow) Session())) {
-				First = NULL;
 				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			Current = First;
@@ -379,51 +379,47 @@ namespace Video {
 		}
 		for (BYTE EnterGame; File.ReadByte(EnterGame); Current = Current->Next) {
 			MainWnd::Progress_Set(Current->Time, TotalTime);
-			switch (EnterGame) {
-				case TRUE: {
-					if (1000 > TotalTime - Current->Time) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					Current->EndSession();
-					if (!Src.Read(File) || !Parser->EnterGame) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Record(Current->Next = new(std::nothrow) Session(Current))) {
-						Current->Next = NULL;
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-					if (!Parser->FixEnterGame(*Current->Next)) {
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-				} break;
-				case FALSE: {
-					WORD Delay;
-					if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
-						Current->Next = NULL;
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-					if (!Parser->FixTrade(*Current->Next)) {
-						CancelOpen(Override);
-						return ERROR_CANNOT_OPEN_VIDEO_FILE;
-					}
-				} break;
-				default: {
+			if (!EnterGame) {
+				WORD Delay;
+				if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
+				if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
+					CancelOpen(Override);
+					return ERROR_CORRUPT_VIDEO;
+				}
+				if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
+					CancelOpen(Override);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+				if (!Parser->FixTrade(*Current->Next)) {
+					CancelOpen(Override);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+			}
+			else if (EnterGame == TRUE) {
+				if (1000 > TotalTime - Current->Time) {
+					CancelOpen(Override);
+					return ERROR_CORRUPT_VIDEO;
+				}
+				Current->EndSession();
+				if (!Src.Read(File) || !Parser->EnterGame) {
+					CancelOpen(Override);
+					return ERROR_CORRUPT_VIDEO;
+				}
+				if (!Src.Record(Current->Next = new(std::nothrow) Session(Current))) {
+					CancelOpen(Override);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+				if (!Parser->FixEnterGame(*Current->Next)) {
+					CancelOpen(Override);
+					return ERROR_CANNOT_OPEN_VIDEO_FILE;
+				}
+			}
+			else {
+				CancelOpen(Override);
+				return ERROR_CORRUPT_VIDEO;
 			}
 		}
 		if (Current->Time != TotalTime) {
@@ -545,90 +541,68 @@ namespace Video {
 	BYTE RECVersion() {
 		return Tibia::Version >= 1080 ? 11 : Tibia::Version >= 1058 ? 10 : Tibia::Version >= 1054 ? 9 : Tibia::Version >= 980 ? 8 : Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
 	}
-	INT LZMA_Callback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
+	INT CAMProgressCallback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
 		MainWnd::Progress_Set(DecSize, TotalSize);
 		return 0;
 	}
 	UINT SaveCAM() {
-		WritingFile File;
-		if (!File.Open(FileName, CREATE_ALWAYS)) {
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		if (!File.Write(CAM_HASH, 32) || !File.WriteByte((Tibia::Version / 100) % 100) || !File.WriteByte((Tibia::Version / 10) % 10) || !File.WriteByte(Tibia::Version % 10) || !File.WriteByte(0)) {
-			File.Delete(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		if (Tibia::HostLen) { // Our little mod to allow otserver info, no other player checks the hash
-			if (!File.WriteDword(Tibia::HostLen + 3)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (!File.WriteByte(Tibia::HostLen)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (!File.Write(Tibia::Host, Tibia::HostLen)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (!File.WriteWord(Tibia::Port)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-		}
-		else {
-			if (!File.WriteDword(0)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-		}
 		NeedParser ToSave;
-		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16;
-		if (Size > 0x1000F) {
-			File.Delete(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		DWORD Packets = 58;
+		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize() + 10;
-			if (PacketSize > 0x10009 || PacketSize > 0x7FFFFFFF - Size) {
-				File.Delete(FileName);
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFFF) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			Size += PacketSize;
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		BufferedFile Encoder;
-		if (!Encoder.LZMA_Start(Size)) {
-			File.Delete(FileName);
+		LzmaFile File;
+		if (!File.StartHeader(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		Encoder.WriteByte(RECVersion()); // Ignored by all players
-		Encoder.WriteByte(2); // It mimics an encrypted REC file, but without encryption
-		Encoder.WriteDword(Packets);
+		File.Write(CAM_HASH, 32);
+		File.WriteByte((Tibia::Version / 100) % 100);
+		File.WriteByte((Tibia::Version / 10) % 10);
+		File.WriteByte(Tibia::Version % 10);
+		File.WriteByte(0);
+		if (Tibia::HostLen) { // Our little mod to allow otserver info, no other player checks the hash
+			File.WriteDword(Tibia::HostLen + 3);
+			File.WriteByte(Tibia::HostLen);
+			File.Write(Tibia::Host, Tibia::HostLen);
+			File.WriteWord(Tibia::Port);
+		}
+		else {
+			File.WriteDword(0);
+		}
+		File.EndHeader();
+		File.WriteByte(RECVersion()); // Ignored by all players
+		File.WriteByte(2); // It mimics an encrypted REC file, but without encryption
+		File.WriteDword(Packets);
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			Size = Packet->RawSize();
-			Encoder.WriteWord(Size);
-			Encoder.WriteDword(Current->Time);
-			Encoder.Write(Packet, Size);
-			Encoder.WriteDword(crc32(0, Packet->Data, Packet->Size));
+			if ((Size = Packet->RawSize()) > 0xFFFF) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			File.WriteWord(Size);
+			File.WriteDword(Current->Time);
+			File.Write(Packet, Size);
+			File.WriteDword(crc32(0, Packet->Data, Packet->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!Encoder.LZMA_Compress(File, LZMA_Callback)) {
-			File.Delete(FileName);
+		if (!File.Compress(CAMProgressCallback)) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		MainWnd::Progress_Start();
+		if (!File.Save(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
 		return NULL;
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;
+		LzmaFile File;
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -671,7 +645,7 @@ namespace Video {
 		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
 			return Error;
 		}
-		if (!File.LZMA_Decompress()) {
+		if (!File.Uncompress()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE RecVersion;
@@ -731,7 +705,7 @@ namespace Video {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteByte(NULL)) {
+		if (!File.WriteByte(FALSE)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -741,21 +715,27 @@ namespace Video {
 		}
 		NeedParser ToSave;
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
-		DWORD PacketSize;
-		if ((PacketSize = Packet->RawSize()) > 0xFFFF) {
+		DWORD Size;
+		if ((Size = Packet->RawSize()) > 0xFFFF) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteWord(PacketSize)) {
+		if (!File.WriteWord(Size)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.Write(Packet, PacketSize)) {
+		if (!File.Write(Packet, Size)) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		while (Current->Next) {
-			if (!File.WriteByte(NULL)) {
+			if (Current->IsLast()) {
+				if (!File.WriteByte(TRUE)) { // I'm adding markers to the ends of the sessions
+					File.Delete(FileName);
+					return ERROR_CANNOT_SAVE_VIDEO_FILE;
+				}
+			}
+			if (!File.WriteByte(FALSE)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
@@ -765,23 +745,17 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
-			if ((PacketSize = Packet->RawSize()) > 0xFFFF) {
+			if ((Size = Packet->RawSize()) > 0xFFFF) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if (!File.WriteWord(PacketSize)) {
+			if (!File.WriteWord(Size)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if (!File.Write(Packet, PacketSize)) {
+			if (!File.Write(Packet, Size)) {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (Current == Current->Login) {
-				if (!File.WriteByte(1)) { // I'm adding markers to the start of the sessions
-					File.Delete(FileName);
-					return ERROR_CANNOT_SAVE_VIDEO_FILE;
-				}
 			}
 			
 		}
@@ -819,8 +793,8 @@ namespace Video {
 		}
 		Converter Src;
 		Src.Time = 0;
-		for (BYTE Type; File.ReadByte(Type); MainWnd::Progress_Set(Src.Time, TotalTime)) {
-			if (!Type) {
+		for (BYTE Marker; File.ReadByte(Marker); MainWnd::Progress_Set(Src.Time, TotalTime)) {
+			if (!Marker) {
 				DWORD Delay;
 				if (!File.ReadDword(Delay) || !Override && Delay > TotalTime - Src.Time) {
 					CancelOpen(Override);
@@ -841,7 +815,7 @@ namespace Video {
 					return Src.Time;
 				}
 			}
-			else if (Type != 1) {
+			else if (Marker != TRUE) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
@@ -858,49 +832,35 @@ namespace Video {
 	}
 
 	UINT SaveREC() {
-		WritingFile File;
-		if (!File.Open(FileName, CREATE_ALWAYS)) {
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		if (!File.WriteByte(RECVersion())) { // this version control is what made me create ttm
-			File.Delete(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		if (!File.WriteByte(1)) { // there is no point in saving encrypted rec files anymore, and they are slower
-			File.Delete(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		DWORD Packets = 1;
+		NeedParser ToSave;
+		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 14, Packets = 1;
 		for (Current = First; Current = Current->Next; Packets++) {
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 			if (Packets == INFINITE) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0x7FFFFFFF) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		if (!File.WriteDword(Packets)) {
-			File.Delete(FileName);
+		BufferedFile File;
+		if (!File.Start(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		NeedParser ToSave;
+		File.WriteByte(RECVersion()); // this version control is what made me create ttm
+		File.WriteByte(1); // there is no point in saving encrypted rec files anymore, and they are slower
+		File.WriteDword(Packets);
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			DWORD PacketSize = Packet->RawSize();
-			if (!File.WriteDword(PacketSize)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (!File.WriteDword(Current->Time)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			if (!File.Write(Packet, PacketSize)) {
-				File.Delete(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
+			File.WriteDword(Size = Packet->RawSize());
+			File.WriteDword(Current->Time);
+			File.Write(Packet, Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
+		if (!File.Save(FileName)) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
 		Changed = FALSE;
 		return NULL;
 	}
@@ -995,12 +955,12 @@ namespace Video {
 					Data[i] -= Key - Rem;
 				}
 				if (RecVersion > 4 && Size) {
-					DWORD DecryptedSize = Size;
-					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &DecryptedSize) || !DecryptedSize) {
+					DWORD AesSize = Size;
+					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &AesSize) || !AesSize) {
 						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Size = WORD(DecryptedSize);
+					Size = WORD(AesSize);
 				}
 				if (!Src.Read(Data, Size, Override)) {
 					return Src.Time;
@@ -1354,7 +1314,7 @@ namespace Video {
 		ListBox_SetCurSel(MainWnd::ListSessions, LoginNumber);
 	}
 	Session *UnloadSession(CONST INT LoginNumber) {
-		if (Session *&NextLogin = (CurrentLogin->Prev ? *(Session **) &CurrentLogin->Prev->Next : First) = (Session *) CurrentLogin->Last->Next) {
+		if (Session *&NextLogin = *(Session**) &((CurrentLogin->Prev ? CurrentLogin->Prev->Next : First) = CurrentLogin->Last->Next)) {
 			NextLogin->Prev = CurrentLogin->Prev;
 			CurrentLogin->Last->Next = NULL;
 			PlayedTime = NextLogin->Time - Current->Time;
@@ -1398,7 +1358,7 @@ namespace Video {
 	}
 	VOID Delete() {
 		if (Last) {
-			if (First->Last->Next) {
+			if (FirstSession->Last->Next) {
 				UnloadSession(GetSession());
 			}
 			else {
@@ -1466,7 +1426,7 @@ namespace Video {
 	}
 	VOID WaitDelete() {
 		if (Last) {
-			if (First->Last->Next) {
+			if (FirstSession->Last->Next) {
 				UnloadSession(GetSession());
 			}
 			else {
@@ -2172,7 +2132,7 @@ namespace Video {
 	}
 
 	VOID PlayDelete() {
-		if (!First->Last->Next) {
+		if (!FirstSession->Last->Next) {
 			return PlayClose();
 		}
 		Current = UnloadSession(StartSkipSession());
@@ -2590,7 +2550,7 @@ namespace Video {
 		ScrollSession();
 	}
 	VOID ScrollDelete() {
-		if (!First->Last->Next) {
+		if (!FirstSession->Last->Next) {
 			return PlayClose();
 		}
 		Current = UnloadSession(GetSession());

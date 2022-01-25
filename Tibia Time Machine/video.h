@@ -51,7 +51,7 @@ namespace Video {
 		}
 	};
 
-	extern Session *First;
+	extern Packet *First;
 	extern Packet *Last;
 	extern Packet *Current;
 
