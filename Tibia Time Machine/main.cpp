@@ -548,31 +548,8 @@ namespace MainWnd {
 				RegCloseKey(RootKey);
 			}
 		}
-		if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-			ShellRegister(RootKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
-			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".cam"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-			if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T(".rec"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-		}
 		IconPath[IconLen - 1] = '5';
 		if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\otserv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-			RegSetValueEx(RootKey, _T("URL Protocol"), 0, REG_SZ, NULL, 0);
-			ShellRegister(RootKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
-		}
-		if (RegCreateKeyEx(HKEY_CLASSES_ROOT, _T("otserv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
 			RegSetValueEx(RootKey, _T("URL Protocol"), 0, REG_SZ, NULL, 0);
 			ShellRegister(RootKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
 		}
