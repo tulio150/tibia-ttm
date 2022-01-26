@@ -198,23 +198,29 @@ struct LzmaFile : public BufferedFile {
 		}
 		return NULL;
 	}
-	LPBYTE Uncompress() {
+	LPBYTE Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize;
 		if (ReadDword(OldSize) && OldSize > 13) {
+			OldSize -= 13;
 			if (CONST LPBYTE Props = Skip(5)) {
 				DWORD Size;
 				if (ReadDword(Size) && Size) {
 					DWORD Large;
 					if (ReadDword(Large) && !Large) {
-						if (LPBYTE Compressed = Skip(OldSize -= 13)) {
-							if (Data = new(std::nothrow) BYTE[Size]) {
-								if (LzmaUncompress(Data, &Size, Compressed, &OldSize, Props, 5) != SZ_ERROR_DATA) {
-									delete[] Ptr;
-									Ptr = Data;
-									return End = Data + Size;
-								}
-								delete[] Data;
+						if ((Data + OldSize) > End) {
+							if (!AllowTruncated) {
+								return NULL;
 							}
+							OldSize = End - Data;
+						}
+						End = Data;
+						if (Data = new(std::nothrow) BYTE[Size]) {
+							if (LzmaUncompress(Data, &Size, End, &OldSize, Props, 5) != SZ_ERROR_DATA) {
+								delete[] Ptr;
+								Ptr = Data;
+								return End = Data + Size;
+							}
+							delete[] Data;
 						}
 					}
 				}

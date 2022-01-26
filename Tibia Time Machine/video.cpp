@@ -209,13 +209,7 @@ namespace Video {
 						Tibia::SetVersionString(Version);
 						Override = FALSE;
 					}
-					else {
-						Override = Tibia::Version != Version || Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen) || Tibia::Port != Port;
-					}
 					MainWnd::Progress_Start();
-				}
-				else {
-					Override = Tibia::Version != Version || Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen) || Tibia::Port != Port;
 				}
 			}
 		}
@@ -645,7 +639,7 @@ namespace Video {
 		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
 			return Error;
 		}
-		if (!File.Uncompress()) {
+		if (!File.Uncompress(Override)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE RecVersion;
