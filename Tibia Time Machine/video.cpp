@@ -1201,11 +1201,6 @@ namespace Video {
 							CommDlg_OpenSave_SetControlText(GetParent(Dialog), chx1, Overrride);
 						}
 						break;
-					case CDN_FOLDERCHANGE:
-						if (HWND ListView = FindWindowEx(GetParent(Dialog), NULL, _T("SHELLDLL_DefView"), NULL)) {
-							//EnableWindow(ListView, FALSE);
-						}
-						break;
 					case CDN_FILEOK:
 						MainWnd::Progress_Start();
 						CONST LPOPENFILENAME &Info = LPOFNOTIFY(Lp)->lpOFN;

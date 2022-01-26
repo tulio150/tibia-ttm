@@ -176,6 +176,7 @@ namespace MainWnd {
 		Icon.hIcon = LoadSmallIcon(GetModuleHandle(NULL), Tibia::GetIcon());
 		Icon.uTimeout = 10000;
 		Icon.dwInfoFlags = NIIF_USER;
+		Tibia::SetVersionString(Tibia::Version);
 		if (Tibia::HostLen) {
 			CopyMemory(Icon.szInfoTitle, _T("OpenTibia "), TLEN(10));
 			CopyMemory(Icon.szInfoTitle + 10, Tibia::VersionString, sizeof(Tibia::VersionString));
@@ -534,6 +535,7 @@ namespace MainWnd {
 		if (RegOpenKeyEx(GetKeyState(VK_SHIFT) < 0 ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER, _T("Software\\Classes"), NULL, KEY_CREATE_SUB_KEY, &RootKey) == ERROR_SUCCESS) {
 			HKEY ClassKey;
 			if (RegCreateKeyEx(RootKey, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				//RegSetValueEx(ClassKey, _T("InfoTip"), 0, REG_SZ, LPBYTE(_T("prop:System.ItemType")), TLEN(20));
 				ShellRegister(ClassKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
 				if (RegCreateKeyEx(RootKey, _T(".ttm"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
