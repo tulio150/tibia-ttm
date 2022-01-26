@@ -531,7 +531,7 @@ namespace MainWnd {
 		SIZE_T DescriptionLen = LoadString(NULL, FILETYPE_TTM, VideoDescription, 20);
 
 		HKEY RootKey;
-		if (RegOpenKey(HKEY_CURRENT_USER, _T("Software\\Classes"), &RootKey) == ERROR_SUCCESS) {
+		if (RegOpenKeyEx(GetKeyState(VK_SHIFT) < 0 ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER, _T("Software\\Classes"), NULL, KEY_CREATE_SUB_KEY, &RootKey) == ERROR_SUCCESS) {
 			HKEY ClassKey;
 			if (RegCreateKeyEx(RootKey, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 				ShellRegister(ClassKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
@@ -558,8 +558,8 @@ namespace MainWnd {
 				ShellRegister(ClassKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
 			}
 			RegCloseKey(RootKey);
+			SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 		}
-		SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 	}
 
 	DWORD GetAutoPlay() {
