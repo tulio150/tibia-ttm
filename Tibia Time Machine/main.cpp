@@ -492,10 +492,10 @@ namespace MainWnd {
 		}
 	}
 
-	VOID ShellRegister(CONST HKEY RootKey, CONST LPCTSTR FileDescription, CONST SIZE_T DescriptionLen, CONST LPCTSTR CommandPath, CONST SIZE_T CommandLen, CONST LPCTSTR IconPath, CONST SIZE_T IconLen) {
-		RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(FileDescription), TLEN(DescriptionLen));
+	VOID ShellRegister(CONST HKEY ClassKey, CONST LPCTSTR FileDescription, CONST SIZE_T DescriptionLen, CONST LPCTSTR CommandPath, CONST SIZE_T CommandLen, CONST LPCTSTR IconPath, CONST SIZE_T IconLen) {
+		RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(FileDescription), TLEN(DescriptionLen));
 		HKEY ShellKey;
-		if (RegCreateKeyEx(RootKey, _T("shell"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ShellKey, NULL) == ERROR_SUCCESS) {
+		if (RegCreateKeyEx(ClassKey, _T("shell"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ShellKey, NULL) == ERROR_SUCCESS) {
 			RegSetValueEx(ShellKey, NULL, 0, REG_SZ, LPBYTE(_T("open")), TLEN(4));
 			HKEY CommandKey;
 			if (RegCreateKeyEx(ShellKey, _T("open\\command"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &CommandKey, NULL) == ERROR_SUCCESS) {
@@ -504,23 +504,25 @@ namespace MainWnd {
 			}
 			RegCloseKey(ShellKey);
 		}
-		if (RegCreateKeyEx(RootKey, _T("DefaultIcon"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ShellKey, NULL) == ERROR_SUCCESS) {
+		if (RegCreateKeyEx(ClassKey, _T("DefaultIcon"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ShellKey, NULL) == ERROR_SUCCESS) {
 			RegSetValueEx(ShellKey, NULL, 0, REG_SZ, LPBYTE(IconPath), TLEN(IconLen));
 			RegCloseKey(ShellKey);
 		}
-		RegCloseKey(RootKey);
+		RegCloseKey(ClassKey);
 	}
 
 	VOID OnRegister() {
 		TCHAR CommandPath[MAX_PATH];
 		GetModuleFileName(NULL, CommandPath, MAX_PATH);
+
+		TCHAR IconPath[MAX_PATH];
+		CopyMemory(IconPath, CommandPath, TLEN(MAX_PATH));
+
 		PathQuoteSpaces(CommandPath);
 		SIZE_T CommandLen = _tcslen(CommandPath);
 		CopyMemory(CommandPath + CommandLen, _T(" \"%1\""), TLEN(6));
 		CommandLen += 5;
 
-		TCHAR IconPath[MAX_PATH];
-		GetModuleFileName(NULL, IconPath, MAX_PATH);
 		SIZE_T IconLen = _tcslen(IconPath);
 		CopyMemory(IconPath + IconLen, _T(",1"), TLEN(3));
 		IconLen += 2;
@@ -529,29 +531,33 @@ namespace MainWnd {
 		SIZE_T DescriptionLen = LoadString(NULL, FILETYPE_TTM, VideoDescription, 20);
 
 		HKEY RootKey;
-		if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-			ShellRegister(RootKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
-			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
+		if (RegOpenKey(HKEY_CURRENT_USER, _T("Software\\Classes"), &RootKey) == ERROR_SUCCESS) {
+			HKEY ClassKey;
+			if (RegCreateKeyEx(RootKey, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				ShellRegister(ClassKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
+				if (RegCreateKeyEx(RootKey, _T(".ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+					RegCloseKey(ClassKey);
+				}
+				if (RegCreateKeyEx(RootKey, _T(".cam"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+					RegCloseKey(ClassKey);
+				}
+				if (RegCreateKeyEx(RootKey, _T(".tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+					RegCloseKey(ClassKey);
+				}
+				if (RegCreateKeyEx(RootKey, _T(".rec"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
+					RegCloseKey(ClassKey);
+				}
 			}
-			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.cam"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
+			IconPath[IconLen - 1] = '5';
+			if (RegCreateKeyEx(RootKey, _T("otserv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				RegSetValueEx(ClassKey, _T("URL Protocol"), 0, REG_SZ, NULL, 0);
+				ShellRegister(ClassKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
 			}
-			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-			if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\.rec"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-				RegSetValueEx(RootKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
-				RegCloseKey(RootKey);
-			}
-		}
-		IconPath[IconLen - 1] = '5';
-		if (RegCreateKeyEx(HKEY_CURRENT_USER, _T("Software\\Classes\\otserv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &RootKey, NULL) == ERROR_SUCCESS) {
-			RegSetValueEx(RootKey, _T("URL Protocol"), 0, REG_SZ, NULL, 0);
-			ShellRegister(RootKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
+			RegCloseKey(RootKey);
 		}
 		SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 	}
