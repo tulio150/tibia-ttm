@@ -1063,8 +1063,7 @@ namespace Video {
 		PathRemoveArgs(File);
 		PathUnquoteSpaces(File);
 		if (!DiffMemory(File, _T("otserv:"), TLEN(7))) {
-			Tibia::StartURL(File);
-			return;
+			return Tibia::StartURL(File);
 		}
 		GetFullPathName(File, MAX_PATH, FileName, NULL);
 		if (!PathFileExists(FileName)) {
@@ -1073,12 +1072,14 @@ namespace Video {
 		}
 		MainWnd::Progress_Start();
 		if (CONST UINT Error = OpenMultiple(DetectFormat(), GetKeyState(VK_SHIFT) < 0, MainWnd::Handle)) {
-			return ErrorBox(Error, TITLE_OPEN_VIDEO);
+			ErrorBox(Error, TITLE_OPEN_VIDEO);
 		} //TODO: open exe, detect custom client and import accordingly
-		MainWnd::Done();
-		SetFileTitle();
-		Tibia::AutoPlay();
-		MainWnd::Progress_Stop();
+		if (Last) {
+			MainWnd::Done();
+			SetFileTitle();
+			Tibia::AutoPlay();
+			MainWnd::Progress_Stop();
+		}
 	}
 	VOID OpenDrop(CONST HDROP Drop) {
 		BOOL Override = GetKeyState(VK_SHIFT) < 0;
@@ -1200,6 +1201,11 @@ namespace Video {
 							CommDlg_OpenSave_SetControlText(GetParent(Dialog), chx1, Overrride);
 						}
 						break;
+					case CDN_FOLDERCHANGE:
+						if (HWND ListView = FindWindowEx(GetParent(Dialog), NULL, _T("SHELLDLL_DefView"), NULL)) {
+							//EnableWindow(ListView, FALSE);
+						}
+						break;
 					case CDN_FILEOK:
 						MainWnd::Progress_Start();
 						CONST LPOPENFILENAME &Info = LPOFNOTIFY(Lp)->lpOFN;
@@ -1210,11 +1216,11 @@ namespace Video {
 							MessageBox(Dialog, ErrorString, Info->lpstrTitle, MB_ICONSTOP);
 							MainWnd::Progress_Stop();
 							SetWindowLongPtr(Dialog, DWLP_MSGRESULT, TRUE);
-							return TRUE;
+							if (!Last) {
+								return TRUE;
+							}
 						}
-						else {
-							SetFileTitle();
-						}
+						SetFileTitle();
 						break;
 				}
 				break;
