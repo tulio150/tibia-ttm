@@ -535,19 +535,19 @@ namespace MainWnd {
 			HKEY ClassKey;
 			if (RegCreateKeyEx(RootKey, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 				ShellRegister(ClassKey, VideoDescription, DescriptionLen, CommandPath, CommandLen, IconPath, IconLen);
-				if (RegCreateKeyEx(RootKey, _T(".ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				if (RegCreateKeyEx(RootKey, _T(".ttm"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 					RegCloseKey(ClassKey);
 				}
-				if (RegCreateKeyEx(RootKey, _T(".cam"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				if (RegCreateKeyEx(RootKey, _T(".cam"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 					RegCloseKey(ClassKey);
 				}
-				if (RegCreateKeyEx(RootKey, _T(".tmv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				if (RegCreateKeyEx(RootKey, _T(".tmv"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 					RegCloseKey(ClassKey);
 				}
-				if (RegCreateKeyEx(RootKey, _T(".rec"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				if (RegCreateKeyEx(RootKey, _T(".rec"), 0, NULL, NULL, KEY_SET_VALUE, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 					RegSetValueEx(ClassKey, NULL, 0, REG_SZ, LPBYTE(_T("tibia_ttm")), TLEN(9));
 					RegCloseKey(ClassKey);
 				}
