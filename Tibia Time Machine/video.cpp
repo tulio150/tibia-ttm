@@ -1215,8 +1215,8 @@ namespace Video {
 							LoadString(NULL, Error, ErrorString, 200);
 							MessageBox(Dialog, ErrorString, Info->lpstrTitle, MB_ICONSTOP);
 							MainWnd::Progress_Stop();
-							SetWindowLongPtr(Dialog, DWLP_MSGRESULT, TRUE);
 							if (!Last) {
+								SetWindowLongPtr(Dialog, DWLP_MSGRESULT, TRUE);
 								return TRUE;
 							}
 						}
