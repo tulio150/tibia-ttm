@@ -201,13 +201,12 @@ struct LzmaFile : public BufferedFile {
 	LPBYTE Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize;
 		if (ReadDword(OldSize) && OldSize > 13) {
-			OldSize -= 13;
 			if (CONST LPBYTE Props = Skip(5)) {
 				DWORD Size;
 				if (ReadDword(Size) && Size) {
 					DWORD Large;
 					if (ReadDword(Large) && !Large) {
-						if ((Data + OldSize) > End) {
+						if ((Data + (OldSize -= 13)) > End) {
 							if (!AllowTruncated) {
 								return NULL;
 							}
