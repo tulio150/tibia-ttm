@@ -30,7 +30,6 @@ namespace Video {
 	HCRYPTKEY RecKey = NULL;
 
 #define CurrentLogin ((Session *) Current)
-#define FirstSession ((Session *) First)
 
 	VOID Packet::EndSession()  {
 		Login->Last = this;
@@ -299,7 +298,7 @@ namespace Video {
 			Parser->SetPacket(*this);
 			return Parser->GetPacketType();
 		}
-		BOOL Record(Packet *&CONST Next) {
+		BOOL Record(Packet *&Next) {
 			if (Next) {
 				if (LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
 					CopyMemory(Data, P->Data, P->Size);
@@ -438,7 +437,7 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		BOOL Read(LPBYTE Data, DWORD Avail, CONST BOOL Override) {
+		BOOL Read(LPBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
 				Data += Want;
@@ -447,7 +446,6 @@ namespace Video {
 					if (PacketSize) {
 						Store = Parser->AllocPacket(*this, PacketSize);
 						if (!Store) {
-							CancelOpen(Override);
 							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
@@ -460,25 +458,21 @@ namespace Video {
 				}
 				else {
 					if (!Parser->GetPacketType()) {
-						CancelOpen(Override);
 						Time = ERROR_CORRUPT_VIDEO;
 						return FALSE;
 					}
 					if (Parser->EnterGame) {
 						if (!Parser->FixEnterGame(*this)) {
-							CancelOpen(Override);
 							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
 						if (Current) {
 							if (1000 > INFINITE - Current->Time) {
-								CancelOpen(Override);
-								Time = Last ? ERROR_CANNOT_APPEND : ERROR_CANNOT_OPEN_VIDEO_FILE;
+								Time = ERROR_CANNOT_APPEND;
 								return FALSE;
 							}
 							Current->EndSession();
 							if (!(Current = Current->Next = new(std::nothrow) Session(Current))) {
-								CancelOpen(Override);
 								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
@@ -500,7 +494,6 @@ namespace Video {
 							return FALSE; // common packet without a login packet first (usually wrong version selected)
 						}
 						if (!Parser->FixTrade(*this)) {
-							CancelOpen(Override);
 							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
@@ -512,7 +505,6 @@ namespace Video {
 							Delay = INFINITE - Current->Time;
 						}
 						if (!(Current = Current->Next = new(std::nothrow) Packet(Current, WORD(Delay)))) {
-							CancelOpen(Override);
 							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
@@ -546,7 +538,7 @@ namespace Video {
 			if (Packets == INFINITE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFFF) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFF7) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -555,12 +547,12 @@ namespace Video {
 		if (!File.StartHeader(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		File.Write(CAM_HASH, 32);
+		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
 		File.WriteByte((Tibia::Version / 100) % 100);
 		File.WriteByte((Tibia::Version / 10) % 10);
 		File.WriteByte(Tibia::Version % 10);
 		File.WriteByte(0);
-		if (Tibia::HostLen) { // Our little mod to allow otserver info, no other player checks the hash
+		if (Tibia::HostLen) {
 			File.WriteDword(Tibia::HostLen + 3);
 			File.WriteByte(Tibia::HostLen);
 			File.Write(Tibia::Host, Tibia::HostLen);
@@ -618,7 +610,7 @@ namespace Video {
 		}
 		if (Metadata) {
 			if (!DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
-				if (Metadata < 4 || Metadata > 131) {
+				if (Metadata < 4 || Metadata > 130) {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				if (!File.ReadByte(HostLen) || HostLen != Metadata - 3) {
@@ -670,7 +662,8 @@ namespace Video {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (!Src.Read(Data, Size, Override)) {
+			if (!Src.Read(Data, Size)) {
+				CancelOpen(Override);
 				return Src.Time;
 			}
 			MainWnd::Progress_Set(i, Packets);
@@ -805,7 +798,8 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Read(Data, Size, Override)) {
+				if (!Src.Read(Data, Size)) {
+					CancelOpen(Override);
 					return Src.Time;
 				}
 			}
@@ -832,7 +826,7 @@ namespace Video {
 			if (Packets == INFINITE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0x7FFFFFFF) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFFFFFF) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -956,7 +950,8 @@ namespace Video {
 					}
 					Size = WORD(AesSize);
 				}
-				if (!Src.Read(Data, Size, Override)) {
+				if (!Src.Read(Data, Size)) {
+					CancelOpen(Override);
 					return Src.Time;
 				}
 				MainWnd::Progress_Set(i, Packets);
@@ -981,7 +976,8 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Read(Data, Size, Override)) {
+				if (!Src.Read(Data, Size)) {
+					CancelOpen(Override);
 					return Src.Time;
 				}
 				MainWnd::Progress_Set(i, Packets);
@@ -1290,13 +1286,16 @@ namespace Video {
 		}
 	}
 
+	BOOL LastSession() {
+		return !((Session*)First)->Last->Next;
+	}
 	INT GetSession() {
 		CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 		if (LoginNumber < 0) {
 			Current = First;
 			return 0;
 		}
-		Current = (Packet *) ListBox_GetItemData(MainWnd::ListSessions, LoginNumber);
+		Current = (Packet*) ListBox_GetItemData(MainWnd::ListSessions, LoginNumber);
 		return LoginNumber;
 	}
 
@@ -1353,16 +1352,16 @@ namespace Video {
 	}
 	VOID Delete() {
 		if (Last) {
-			if (FirstSession->Last->Next) {
-				UnloadSession(GetSession());
-			}
-			else {
+			if (LastSession()) {
 				UnloadClose();
 				TCHAR LabelString[40];
 				LoadString(NULL, LABEL_NO_VIDEO, LabelString, 40);
 				Static_SetText(MainWnd::LabelTime, LabelString);
 				LoadString(NULL, BUTTON_OPEN, LabelString, 40);
 				Button_SetText(MainWnd::ButtonSub, LabelString);
+			}
+			else {
+				UnloadSession(GetSession());
 			}
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 		}
@@ -1421,11 +1420,11 @@ namespace Video {
 	}
 	VOID WaitDelete() {
 		if (Last) {
-			if (FirstSession->Last->Next) {
-				UnloadSession(GetSession());
+			if (LastSession()) {
+				UnloadClose();
 			}
 			else {
-				UnloadClose();
+				UnloadSession(GetSession());
 			}
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 		}
@@ -2127,7 +2126,7 @@ namespace Video {
 	}
 
 	VOID PlayDelete() {
-		if (!FirstSession->Last->Next) {
+		if (LastSession()) {
 			return PlayClose();
 		}
 		Current = UnloadSession(StartSkipSession());
@@ -2545,7 +2544,7 @@ namespace Video {
 		ScrollSession();
 	}
 	VOID ScrollDelete() {
-		if (!FirstSession->Last->Next) {
+		if (LastSession()) {
 			return PlayClose();
 		}
 		Current = UnloadSession(GetSession());

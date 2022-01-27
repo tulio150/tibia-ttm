@@ -175,9 +175,10 @@ extern "C" { // Modded LzmaLib for compression progress
 }
 
 struct LzmaFile : public BufferedFile {
-	LPBYTE StartHeader(CONST DWORD Size, CONST DWORD Header) {
-		if (Start(Header + 17 + Size * 2)) {
-			return End = Data + Header + 17 + Size;
+	LPBYTE StartHeader(CONST DWORD Size, DWORD Header) {
+		Header += Size + 17;
+		if (Start(Size + Header)) {
+			return End = Data + Header;
 		}
 		return NULL;
 	}
