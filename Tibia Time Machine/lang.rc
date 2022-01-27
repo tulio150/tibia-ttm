@@ -33,6 +33,7 @@ STRINGTABLE
 	LABEL_PAUSED "Paused"
 	LABEL_SLOW "Slow"
 	LABEL_FAST "Fast"
+	LABEL_OVERRIDE "Try to recover video file"
 
 	BUTTON_OPEN "Op&en"
 	BUTTON_SAVE "Sav&e"
@@ -152,6 +153,7 @@ LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
 	LABEL_PAUSED "Parado"
 	LABEL_SLOW "Devagar"
 	LABEL_FAST "Rápido"
+	LABEL_OVERRIDE "Tentar recuperar vídeo"
 
 	BUTTON_OPEN "Abri&r"
 	BUTTON_SAVE "Salva&r"

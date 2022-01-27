@@ -32,6 +32,7 @@
 #define LABEL_PAUSED 35
 #define LABEL_SLOW 36
 #define LABEL_FAST 37
+#define LABEL_OVERRIDE 38
 
 #define BUTTON_OPEN 40
 #define BUTTON_SAVE 41

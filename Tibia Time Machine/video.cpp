@@ -1197,7 +1197,7 @@ namespace Video {
 					case CDN_INITDONE:
 						if (!Last) {
 							TCHAR Overrride[40];
-							LoadString(NULL, TITLE_LOADER_OVERRIDE, Overrride, 40);
+							LoadString(NULL, LABEL_OVERRIDE, Overrride, 40);
 							CommDlg_OpenSave_SetControlText(GetParent(Dialog), chx1, Overrride);
 						}
 						break;
