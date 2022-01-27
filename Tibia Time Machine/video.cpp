@@ -196,20 +196,18 @@ namespace Video {
 
 	UINT BeforeOpen(BOOL &Override, CONST HWND Parent, CONST WORD Version, CONST BYTE HostLen, CONST LPCSTR Host, CONST WORD Port) {
 		if (Override) {
-			if (!Last) {
-				if (!Tibia::Running) {
-					Tibia::SetHost(Version, HostLen, Host, Port);
-					MainWnd::Progress_Pause();
-					if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
-						if (Version < 700 || Version > LATEST) {
-							Tibia::Version = Version < 700 ? 700 : LATEST;
-							return ERROR_UNSUPPORTED_TIBIA_VERSION;
-						}
-						Tibia::SetVersionString(Version);
-						Override = FALSE;
+			if (!Last && !Tibia::Running) {
+				Tibia::SetHost(Version, HostLen, Host, Port);
+				MainWnd::Progress_Pause();
+				if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
+					if (Version < 700 || Version > LATEST) {
+						Tibia::Version = Version < 700 ? 700 : LATEST;
+						return ERROR_UNSUPPORTED_TIBIA_VERSION;
 					}
-					MainWnd::Progress_Start();
+					Tibia::SetVersionString(Version);
+					Override = FALSE;
 				}
+				MainWnd::Progress_Start();
 			}
 		}
 		else {
