@@ -1,4 +1,4 @@
-Tibia Time Machine 6.4
+Tibia Time Machine 6.5
 by tulio150 - otland.net
 ------------------------
 
