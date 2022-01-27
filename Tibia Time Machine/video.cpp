@@ -984,7 +984,7 @@ namespace Video {
 		if (!Started()) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		AfterOpen(TRUE);
+		AfterOpen(Override);
 		return NULL;
 	}
 
@@ -1241,10 +1241,9 @@ namespace Video {
 		OpenFileName.lpfnHook = FileDialogHook;
 		OpenFileName.FlagsEx = 0;
 		if (Last) {
-			OpenFileName.nFilterIndex = FILETYPE_TTM;
+			OpenFileName.nFilterIndex = DetectFormat();
 			OpenFileName.lCustData = LPARAM(SaveMultiple);
 			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOTESTFILECREATE | OFN_PATHMUSTEXIST;
-			PathRenameExtension(FileName, _T(".ttm"));
 			LoadString(NULL, TITLE_SAVE_VIDEO, Title, 20);
 			GetSaveFileName(&OpenFileName);
 		}
