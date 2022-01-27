@@ -929,7 +929,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum)  || !Override && Checksum != adler32(1, Data, Size)) {
+				if (!File.ReadDword(Checksum) || !Override && Checksum != adler32(1, Data, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
