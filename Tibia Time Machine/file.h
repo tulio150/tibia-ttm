@@ -187,15 +187,12 @@ struct LzmaFile : public BufferedFile {
 	}
 	LPBYTE Compress(CONST LPVOID Callback) {
 		DWORD Size = Data - End, PropsSize = 5;
-		Data = End - Size - 8;
+		LPBYTE Props = (Data = End - Size - 8) - 5;
 		WriteDword(Size);
 		WriteDword(0);
-		BYTE Props[5];
-		if (!LzmaCompress(Data, &Size, End, Size, Props, &PropsSize, 5, 0, 3, 4, 2, 32, 4, Callback)) {
-			Data -= 17;
-			WriteDword(Size + 13);
-			Write(Props, 5);
-			return Data += Size + 8;
+		if (!LzmaCompress(Data, &Size, End, Size, Props, &PropsSize, 9, 0, 3, 0, 2, 32, 4, Callback)) {
+			*(DWORD*)(Data - 17) = Size + 13;
+			return Data += Size;
 		}
 		return NULL;
 	}
