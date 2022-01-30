@@ -1,9 +1,9 @@
 #pragma once
 #include <windows.h>
 
-#define RES_VERSION 6,5,0,0
-#define STR_VERSION "6.5"
-#define TICKET "TTM65"
+#define RES_VERSION 6,6,0,0
+#define STR_VERSION "6.6"
+#define TICKET "TTM66"
 
 #define SITE_URL "otland.net"
 #define DEV_YEAR "2022"
