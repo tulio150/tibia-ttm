@@ -170,7 +170,7 @@ public:
 #define SZ_ERROR_DATA 1
 extern "C" { // Modded LzmaLib for compression progress
 	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
-	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD* PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPVOID Callback);
+	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPVOID Callback);
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
@@ -186,11 +186,11 @@ struct LzmaFile : public BufferedFile {
 		Data = End;
 	}
 	LPBYTE Compress(CONST LPVOID Callback) {
-		DWORD Size = Data - End, PropsSize = 5;
+		DWORD Size = Data - End;
 		Data = End - Size - 8;
 		WriteDword(Size);
 		WriteDword(0);
-		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, &PropsSize, 9, 0, 3, 0, 2, 32, 4, Callback)) {
+		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 9, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
 			return Data += Size;
 		}
