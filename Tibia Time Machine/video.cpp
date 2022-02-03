@@ -675,7 +675,7 @@ namespace Video {
 
 	UINT SaveTMV() {
 		GzipFile File;
-		if (!File.Open(FileName, "wb")) {
+		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
@@ -754,7 +754,7 @@ namespace Video {
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
 		GzipFile File;
-		if (!File.Open(FileName, "rb")) {
+		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -1164,7 +1164,7 @@ namespace Video {
 			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
 				GzipFile File;
-				if (File.Open(FileName, "rb")) {
+				if (File.Open(FileName, OPEN_EXISTING)) {
 					if (File.ReadWord(Version)) {
 						if (File.ReadWord(Version)) {
 							if (Version >= 700 && Version <= LATEST) {

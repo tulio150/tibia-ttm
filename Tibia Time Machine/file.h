@@ -227,6 +227,8 @@ struct LzmaFile : public BufferedFile {
 	}
 };
 
+static CONST LPCSTR GzipModes[] = { "", "wx", "w", "r", "a" };
+
 class GzipFile {
 	gzFile File;
 
@@ -236,13 +238,11 @@ public:
 		gzclose(File);
 	}
 
-	BOOL Open(CONST LPCSTR FileName, CONST LPCSTR Mode) {
-		return BOOL(File = gzopen(FileName, Mode));
+	BOOL Open(CONST LPCSTR FileName, CONST DWORD Flag) {
+		return BOOL(File = gzopen(FileName, GzipModes[Flag]));
 	}
-	BOOL Open(CONST LPCWSTR FileName, CONST LPCSTR Mode) {
-		CHAR FileNameA[MAX_PATH];
-		CopyMemoryW(FileNameA, FileName, MAX_PATH);
-		return Open(FileNameA, Mode);
+	BOOL Open(CONST LPCWSTR FileName, CONST DWORD Flag) {
+		return BOOL(File = gzopen_w(FileName, GzipModes[Flag]));
 	}
 	BOOL Flush() {
 		return gzflush(File, Z_FINISH) == Z_OK;
