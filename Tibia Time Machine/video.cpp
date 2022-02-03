@@ -1131,7 +1131,7 @@ namespace Video {
 		MainWnd::Progress_Stop();
 	}
 
-	WORD GetFileVersion() {
+	WORD GetFileVersion(CONST LPCTSTR FileName) {
 		if (LPCTSTR Extension = PathFindExtension(FileName)) {
 			WORD Version;
 			if (!_tcsicmp(Extension, _T(".ttm"))) {
@@ -1199,15 +1199,16 @@ namespace Video {
 							TCHAR Overrride[40];
 							LoadString(NULL, LABEL_OVERRIDE, Overrride, 40);
 							CommDlg_OpenSave_SetControlText(Parent, chx1, Overrride);
-							CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion() ? Tibia::VersionString : NULL);
+							CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion(FileName) ? Tibia::VersionString : NULL);
 							EnableWindow(GetDlgItem(Parent, pshHelp), FALSE);
 						}
 						break;
 					case CDN_SELCHANGE:
 						if (!Last) {
 							HWND Parent = GetParent(Dialog);
+							TCHAR FileName[MAX_PATH];
 							if (CommDlg_OpenSave_GetFilePath(Parent, FileName, MAX_PATH)) {
-								CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion() ? Tibia::VersionString : NULL);
+								CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion(FileName) ? Tibia::VersionString : NULL);
 							}
 						}
 						break;
