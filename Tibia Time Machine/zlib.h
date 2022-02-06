@@ -1896,6 +1896,12 @@ ZEXTERN int            ZEXPORT deflateResetKeep OF((z_streamp));
 #if (defined(_WIN32) || defined(__CYGWIN__)) && !defined(Z_SOLO)
 ZEXTERN gzFile         ZEXPORT gzopen_w OF((const wchar_t *path,
                                             const char *mode));
+#  ifdef UNICODE
+#    define gzopen_t gzopen_w
+#  else
+#    define gzopen_t gzopen
+#  endif
+
 #endif
 #if defined(STDC) || defined(Z_HAVE_STDARG_H)
 #  ifndef Z_SOLO

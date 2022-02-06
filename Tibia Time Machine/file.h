@@ -9,9 +9,7 @@ protected:
 public:
 	GenericFile(): File(INVALID_HANDLE_VALUE) {}
 	~GenericFile() {
-		if (File != INVALID_HANDLE_VALUE) {
-			CloseHandle(File);
-		}
+		CloseHandle(File);
 	}
 
 	DWORD GetSize() CONST {
@@ -63,8 +61,8 @@ struct WritingFile : public GenericFile {
 			SetFilePointer(File, 0, NULL, FILE_BEGIN);
 			SetEndOfFile(File);
 			CloseHandle(File);
-			File = INVALID_HANDLE_VALUE;
 			DeleteFile(FileName);
+			File = INVALID_HANDLE_VALUE;
 		}
 	}
 
@@ -100,8 +98,8 @@ public:
 		delete[] Ptr;
 	}
 
-	LPBYTE Start(CONST DWORD Size) {
-		return Data = Ptr = new(std::nothrow) BYTE[Size];
+	BOOL Start(CONST DWORD Size) {
+		return BOOL(Data = Ptr = new(std::nothrow) BYTE[Size]);
 	}
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		CopyMemory(Data, Src, Size);
@@ -116,32 +114,32 @@ public:
 	VOID WriteDword(CONST DWORD Src) {
 		return Write(&Src, 4);
 	}
-	LPBYTE Save(CONST LPCTSTR FileName) {
+	BOOL Save(CONST LPCTSTR FileName) {
 		WritingFile File;
 		if (File.Open(FileName, CREATE_ALWAYS)) {
 			if (File.Write(Ptr, Data - Ptr)) {
-				return End = Data;
+				return BOOL(End = Data);
 			}
 			File.Delete(FileName);
 		}
-		return NULL;
+		return FALSE;
 	}
 
-	LPBYTE Open(CONST LPCTSTR FileName) {
+	BOOL Open(CONST LPCTSTR FileName) {
 		ReadingFile File;
 		if (File.Open(FileName, OPEN_EXISTING)) {
 			if (DWORD Size = File.GetSize()) {
 				if (Start(Size)) {
 					if (File.Read(Data, Size)) {
-						return End = Data + Size;
+						return BOOL(End = Data + Size);
 					}
 				}
 			}
 		}
-		return NULL;
+		return FALSE;
 	}
-	LPBYTE Reset(CONST DWORD Offset) {
-		return Data = Ptr + Offset;
+	BOOL Reset(CONST DWORD Offset) {
+		return BOOL(Data = Ptr + Offset);
 	}
 	LPBYTE Skip(CONST DWORD Size) {
 		LPBYTE Result = Data;
@@ -150,19 +148,19 @@ public:
 		}
 		return Result;
 	}
-	LPVOID Read(CONST LPVOID Dest, CONST DWORD Size) {
+	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		if (LPBYTE Src = Skip(Size)) {
-			return CopyMemory(Dest, Src, Size);
+			return BOOL(CopyMemory(Dest, Src, Size));
 		}
-		return NULL;
+		return FALSE;
 	}
-	LPVOID ReadByte(BYTE& Dest) {
+	BOOL ReadByte(BYTE& Dest) {
 		return Read(&Dest, 1);
 	}
-	LPVOID ReadWord(WORD& Dest) {
+	BOOL ReadWord(WORD& Dest) {
 		return Read(&Dest, 2);
 	}
-	LPVOID ReadDword(DWORD& Dest) {
+	BOOL ReadDword(DWORD& Dest) {
 		return Read(&Dest, 4);
 	}
 };
@@ -175,59 +173,44 @@ extern "C" { // Modded LzmaLib for compression progress
 }
 
 struct LzmaFile : public BufferedFile {
-	LPBYTE StartHeader(CONST DWORD Size, DWORD Header) {
-		Header += Size + 17;
-		if (Start(Size + Header)) {
-			return End = Data + Header;
-		}
-		return NULL;
+	BOOL StartHeader(CONST DWORD Size, DWORD Header) {
+		return Start(Size + (Header += Size + 17)) ? BOOL(End = Data + Header) : FALSE;
 	}
 	VOID EndHeader() {
 		Data = End;
 	}
-	LPBYTE Compress(CONST LPVOID Callback) {
+	BOOL Compress(CONST LPVOID Callback) {
 		DWORD Size = Data - End;
 		Data = End - Size - 8;
 		WriteDword(Size);
 		WriteDword(0);
 		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 9, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
-			return Data += Size;
+			return BOOL(Data += Size);
 		}
-		return NULL;
+		return FALSE;
 	}
-	LPBYTE Uncompress(CONST BOOL AllowTruncated) {
+	BOOL Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize;
-		if (ReadDword(OldSize) && OldSize > 13) {
+		if (ReadDword(OldSize) && (Data + OldSize <= End || (AllowTruncated && (OldSize = End - Data)))) {
 			if (CONST LPBYTE Props = Skip(5)) {
-				DWORD Size;
-				if (ReadDword(Size) && Size) {
-					DWORD Large;
-					if (ReadDword(Large) && !Large) {
-						if ((Data + (OldSize -= 13)) > End) {
-							if (!AllowTruncated) {
-								return NULL;
-							}
-							OldSize = End - Data;
+				DWORD Size, Large;
+				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
+					End = Data;
+					if (Data = new(std::nothrow) BYTE[Size]) {
+						if (LzmaUncompress(Data, &Size, End, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+							delete[] Ptr;
+							Ptr = Data;
+							return BOOL(End = Data + Size);
 						}
-						End = Data;
-						if (Data = new(std::nothrow) BYTE[Size]) {
-							if (LzmaUncompress(Data, &Size, End, &OldSize, Props, 5) != SZ_ERROR_DATA) {
-								delete[] Ptr;
-								Ptr = Data;
-								return End = Data + Size;
-							}
-							delete[] Data;
-						}
+						delete[] Data;
 					}
 				}
 			}
 		}
-		return NULL;
+		return FALSE;
 	}
 };
-
-static CONST LPCSTR GzipModes[] = { "", "wx", "w", "r", "a" };
 
 class GzipFile {
 	gzFile File;
@@ -235,21 +218,25 @@ class GzipFile {
 public:
 	GzipFile() : File(NULL) {}
 	~GzipFile() {
-		gzclose(File);
+		gzclose_r(File);
 	}
 
-	BOOL Open(CONST LPCSTR FileName, CONST DWORD Flag) {
-		return BOOL(File = gzopen(FileName, GzipModes[Flag]));
-	}
-	BOOL Open(CONST LPCWSTR FileName, CONST DWORD Flag) {
-		return BOOL(File = gzopen_w(FileName, GzipModes[Flag]));
-	}
-	BOOL Flush() {
-		return gzflush(File, Z_FINISH) == Z_OK;
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		CONST LPCSTR GzipModes[] = { "", "wx", "w", "r", "a" };
+		return BOOL(File = gzopen_t(FileName, GzipModes[Flag]));
 	}
 
+	BOOL Save(CONST LPCTSTR FileName) {
+		if (gzclose_w(File) == Z_OK) {
+			File = NULL;
+			return TRUE;
+		}
+		DeleteFile(FileName);
+		File = NULL;
+		return FALSE;
+	}
 	VOID Delete(CONST LPCTSTR FileName) {
-		gzclose(File);
+		gzclose_w(File); // gzip does not provide a way to cancel without flushing
 		DeleteFile(FileName);
 		File = NULL;
 	}

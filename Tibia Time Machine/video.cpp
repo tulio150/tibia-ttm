@@ -133,7 +133,7 @@ namespace Video {
 	}
 
 	UINT Save() {
-		WritingFile File;
+		WritingFile File; // avoid BufferedFile for the ability to save under low memory, and to avoid size calculations
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -310,7 +310,7 @@ namespace Video {
 	};
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;
+		BufferedFile File;  // faster than ReadingFile, uses more memory (should we have a SafeOpen for big files?)
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -343,7 +343,7 @@ namespace Video {
 		if (!Src.Read(File) || !Parser->PlayerData) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!Parser->EnterGame) {//videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
+		if (!Parser->EnterGame) { // videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
 			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) {
 				return ERROR_CORRUPT_VIDEO;
 			}
@@ -745,8 +745,7 @@ namespace Video {
 			
 		}
 		MainWnd::Progress_Start();
-		if (!File.Flush()) {
-			File.Delete(FileName);
+		if (!File.Save(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
@@ -767,11 +766,6 @@ namespace Video {
 		DWORD TotalTime;
 		if (!File.ReadDword(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
-		}
-		if (Last && !Override) { // Should really check here?
-			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) {
-				return ERROR_CANNOT_APPEND;
-			}
 		}
 		if (UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
 			return Error;
@@ -824,12 +818,12 @@ namespace Video {
 			if (Packets == INFINITE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFFFFFF) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFEFFFE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		BufferedFile File;
+		BufferedFile File; // could have been WritingFile, but this is faster and we already looped trough the packets
 		if (!File.Start(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -851,7 +845,7 @@ namespace Video {
 		return NULL;
 	}
 	WORD GuessVersion(CONST BYTE RecVersion, CONST BYTE Encryption) {
-		switch (RecVersion) { //TODO: Guess version by packet contents
+		switch (RecVersion) { //TODO: guess version by packet contents
 			case 2: return 700; // never found one, let's use for older-than-tibicam recordings
 			case 3:	switch (Encryption) {
 				case 1:	return 710; // no encryption
@@ -869,12 +863,12 @@ namespace Video {
 		return LATEST; //never happens
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;
+		BufferedFile File; // faster than ReadingFile, uses more memory
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion) || RecVersion < 2) { // We are supporting more versions than tibicam itself
+		if (!File.ReadByte(RecVersion) || RecVersion < 2) { // we are supporting more versions than tibicam itself
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
