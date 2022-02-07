@@ -1312,6 +1312,13 @@ namespace Video {
 		SetWindowRedraw(MainWnd::ListSessions, TRUE);
 		ListBox_SetCurSel(MainWnd::ListSessions, LoginNumber);
 	}
+	VOID AfterClose() {
+		Changed = FALSE;
+		TimeStr::SetTimeSeconds(0);
+		ClearFileTitle();
+		Tibia::CloseVersionMenu();
+		ListBox_ResetContent(MainWnd::ListSessions);
+	}
 	Session *UnloadSession(CONST INT LoginNumber) {
 		if (Session *&NextLogin = *(Session**) &((CurrentLogin->Prev ? CurrentLogin->Prev->Next : First) = CurrentLogin->Last->Next)) {
 			NextLogin->Prev = CurrentLogin->Prev;
@@ -1333,11 +1340,7 @@ namespace Video {
 			SessionTimeChanged(LoginNumber - 1);
 			return Last->Login;
 		}
-		Changed = FALSE;
-		TimeStr::SetTimeSeconds(0);
-		ClearFileTitle();
-		Tibia::CloseVersionMenu();
-		ListBox_ResetContent(MainWnd::ListSessions);
+		AfterClose();
 		return NULL;
 	}
 
@@ -1346,11 +1349,7 @@ namespace Video {
 		First = NULL;
 		Last = NULL;
 		Unload();
-		Changed = FALSE;
-		TimeStr::SetTimeSeconds(0);
-		ClearFileTitle();
-		Tibia::CloseVersionMenu();
-		ListBox_ResetContent(MainWnd::ListSessions);
+		AfterClose();
 	}
 
 	VOID Close() {

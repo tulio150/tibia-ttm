@@ -347,7 +347,7 @@ namespace MainWnd {
 				switch (RightMenu) {
 					case 0: break;
 					case 1: OnDelete(); break;
-					case 2: OnDeleteAll(); break;
+					case 2: return OnDeleteAll();
 				}
 				OnScroll(SB_ENDSCROLL);
 			}
