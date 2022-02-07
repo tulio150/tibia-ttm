@@ -1731,10 +1731,8 @@ VOID Parser761::ConstructVideo() CONST {
 	}
 }
 VOID Parser700::RewindVideo() CONST {
-	Proxy::Server.Discard();
 }
 VOID Parser761::RewindVideo() CONST {
-	Proxy::Server.Discard();
 	Video::Current = Video::First;
 	do {
 		if (Video::Current->NeedDecrypt()) {

@@ -484,7 +484,7 @@ namespace Video {
 						Current->Record(*this);
 					}
 					else if (Parser->Pending || Parser->PlayerData) {
-						Discard(); //pending packet, just get data (should not exist, but who knwows)
+						Discard(); // pending packet, just get data (should not exist, but who knwows)
 					}
 					else {
 						if (!Started())  {
@@ -536,7 +536,7 @@ namespace Video {
 			if (Packets == INFINITE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFF7) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFA2) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -1294,9 +1294,6 @@ namespace Video {
 		}
 	}
 
-	BOOL LastSession() {
-		return !((Session*)First)->Last->Next;
-	}
 	INT GetSession() {
 		CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 		if (LoginNumber < 0) {
@@ -1331,9 +1328,17 @@ namespace Video {
 		}
 		Last = CurrentLogin->Prev;
 		Unload();
-		Changed = TRUE;
-		SessionTimeChanged(LoginNumber - 1);
-		return Last->Login;
+		if (Last) {
+			Changed = TRUE;
+			SessionTimeChanged(LoginNumber - 1);
+			return Last->Login;
+		}
+		Changed = FALSE;
+		TimeStr::SetTimeSeconds(0);
+		ClearFileTitle();
+		Tibia::CloseVersionMenu();
+		ListBox_ResetContent(MainWnd::ListSessions);
+		return NULL;
 	}
 
 	VOID UnloadClose() {
@@ -1347,6 +1352,7 @@ namespace Video {
 		Tibia::CloseVersionMenu();
 		ListBox_ResetContent(MainWnd::ListSessions);
 	}
+
 	VOID Close() {
 		if (Last) {
 			UnloadClose();
@@ -1360,16 +1366,12 @@ namespace Video {
 	}
 	VOID Delete() {
 		if (Last) {
-			if (LastSession()) {
-				UnloadClose();
+			if (!UnloadSession(GetSession())) {
 				TCHAR LabelString[40];
 				LoadString(NULL, LABEL_NO_VIDEO, LabelString, 40);
 				Static_SetText(MainWnd::LabelTime, LabelString);
 				LoadString(NULL, BUTTON_OPEN, LabelString, 40);
 				Button_SetText(MainWnd::ButtonSub, LabelString);
-			}
-			else {
-				UnloadSession(GetSession());
 			}
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 		}
@@ -1428,12 +1430,7 @@ namespace Video {
 	}
 	VOID WaitDelete() {
 		if (Last) {
-			if (LastSession()) {
-				UnloadClose();
-			}
-			else {
-				UnloadSession(GetSession());
-			}
+			UnloadSession(GetSession());
 			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 		}
 	}
@@ -1843,6 +1840,7 @@ namespace Video {
 
 	VOID PlayerStop() {
 		Tibia::Unlock();
+		Proxy::Server.Discard(); // ping packet
 		Proxy::HandleClientClose();
 		Speed = 0;
 		KillTimer(MainWnd::Handle, IDTIMER);
@@ -1851,11 +1849,10 @@ namespace Video {
 		Button_Enable(MainWnd::ButtonSpeedUp, FALSE);
 		ScrollBar_Enable(MainWnd::ScrollPlayed, FALSE);
 	}
-
 	VOID Eject() {
-		State = IDLE;
 		Parser->RewindVideo();
 		TimeStr::SetTime(Last->Time);
+		State = IDLE;
 		PlayerStop();
 		TCHAR LabelString[40];
 		LoadString(NULL, LABEL_TOTAL_TIME, LabelString, 40);
@@ -1866,10 +1863,9 @@ namespace Video {
 		LoadString(NULL, BUTTON_START, LabelString, 40);
 		Button_SetText(MainWnd::ButtonMain, LabelString);
 	}
-	VOID Logout() {
+
+	VOID PlayerLogout() {
 		State = WAIT;
-		Parser->RewindVideo();
-		TimeStr::SetTime(Last->Time);
 		PlayerStop();
 		TCHAR LabelString[40];
 		LoadString(NULL, LABEL_WAITING, LabelString, 40);
@@ -1881,20 +1877,14 @@ namespace Video {
 		Button_SetText(MainWnd::ButtonMain, LabelString);
 		MainWnd::Focus(MainWnd::ListSessions);
 	}
+	VOID Logout() {
+		Parser->RewindVideo();
+		TimeStr::SetTime(Last->Time);
+		PlayerLogout();
+	}
 	VOID PlayClose() {
-		State = WAIT;
-		Proxy::Server.Discard(); //ping packet is saved there, do not full rewind because we will unload the movie
 		UnloadClose();
-		PlayerStop();
-		TCHAR LabelString[40];
-		LoadString(NULL, LABEL_WAITING, LabelString, 40);
-		Static_SetText(MainWnd::LabelTime, LabelString);
-		Static_SetText(MainWnd::StatusTime, TimeStr::Time);
-		LoadString(NULL, BUTTON_CANCEL, LabelString, 40);
-		Button_SetText(MainWnd::ButtonSub, LabelString);
-		LoadString(NULL, BUTTON_STOP, LabelString, 40);
-		Button_SetText(MainWnd::ButtonMain, LabelString);
-		MainWnd::Focus(MainWnd::ListSessions);
+		PlayerLogout();
 	}
 
 	BOOL SinglePacket() {
@@ -2134,10 +2124,9 @@ namespace Video {
 	}
 
 	VOID PlayDelete() {
-		if (LastSession()) {
-			return PlayClose();
+		if (!(Current = UnloadSession(StartSkipSession()))) {
+			return PlayerLogout();
 		}
-		Current = UnloadSession(StartSkipSession());
 		if (!PlaySession()) {
 			return Logout();
 		}
@@ -2552,10 +2541,9 @@ namespace Video {
 		ScrollSession();
 	}
 	VOID ScrollDelete() {
-		if (LastSession()) {
-			return PlayClose();
+		if (!(Current = UnloadSession(GetSession()))) {
+			return PlayerLogout();
 		}
-		Current = UnloadSession(GetSession());
 		ScrollSession();
 	}
 
