@@ -6,6 +6,13 @@ class GenericFile {
 protected:
 	HANDLE File;
 
+	HANDLE Reopen(CONST LPCTSTR FileName, CONST DWORD Access, CONST DWORD Share, CONST DWORD Flags) {
+		if (HANDLE(WINAPI* ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
+			return ReOpenFile(File, Access, Share, Flags);
+		}
+		return CreateFile(FileName, Access, Share, NULL, OPEN_EXISTING, Flags, NULL); // Windows XP fallback
+	}
+
 public:
 	GenericFile(): File(INVALID_HANDLE_VALUE) {}
 	~GenericFile() {
@@ -57,12 +64,10 @@ struct WritingFile : public GenericFile {
 	}
 
 	VOID Delete(CONST LPCTSTR FileName) {
-		if (!CloseHandle(CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
+		if (!CloseHandle(Reopen(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE))) {
+			DeleteFile(FileName);
 			SetFilePointer(File, 0, NULL, FILE_BEGIN);
 			SetEndOfFile(File);
-			CloseHandle(File);
-			DeleteFile(FileName);
-			File = INVALID_HANDLE_VALUE;
 		}
 	}
 
@@ -125,17 +130,6 @@ public:
 		return FALSE;
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag, CONST DWORD Size) {
-		if (Start(Size)) {
-			ReadingFile File;
-			if (File.Open(FileName, Flag)) {
-				if (File.Read(Data, Size)) {
-					return BOOL(End = Data + Size);
-				}
-			}
-		}
-		return FALSE;
-	}
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		ReadingFile File;
 		if (File.Open(FileName, Flag)) {
@@ -145,6 +139,15 @@ public:
 						return BOOL(End = Data + Size);
 					}
 				}
+			}
+		}
+		return FALSE;
+	}
+	BOOL Peek(CONST LPCTSTR FileName, CONST LPBYTE Buffer, CONST DWORD Size) {
+		ReadingFile File;
+		if (File.Open(FileName, OPEN_EXISTING)) {
+			if (File.Read(Data = Buffer, Size)) {
+				return BOOL(End = Data + Size);
 			}
 		}
 		return FALSE;
@@ -233,21 +236,21 @@ public:
 		inflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag, CONST DWORD Size) {
-		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
-			if (BufferedFile::Open(FileName, Flag, Size)) {
-				next_in = Data;
-				avail_in = Size;
-				return TRUE;
-			}
-		}
-		return FALSE;
-	}
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
 			if (BufferedFile::Open(FileName, Flag)) {
 				next_in = Data;
 				avail_in = End - Data;
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
+	BOOL Peek(CONST LPCTSTR FileName, CONST LPBYTE Buffer, CONST DWORD Size) {
+		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
+			if (BufferedFile::Peek(FileName, Buffer, Size)) {
+				next_in = Buffer;
+				avail_in = Size;
 				return TRUE;
 			}
 		}
@@ -271,6 +274,7 @@ public:
 
 class DeflateFile : public WritingFile, private z_stream {
 	BYTE Buffer[0x20000];
+
 public:
 	DeflateFile() {
 		zalloc = Z_NULL;
@@ -290,7 +294,7 @@ public:
 		}
 		return FALSE;
 	}
-	BOOL Write() {
+	BOOL Save() {
 		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
 			if (avail_out || !WritingFile::Write(Buffer, sizeof(Buffer))) {
 				return FALSE;

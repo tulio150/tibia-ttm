@@ -744,7 +744,7 @@ namespace Video {
 			}
 		}
 		MainWnd::Progress_Start();
-		if (!File.Write()) {
+		if (!File.Save()) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -1143,16 +1143,14 @@ namespace Video {
 			}
 			else if (!_tcsicmp(Extension, _T(".cam"))) {
 				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.Skip(32)) {
-						BYTE VersionPart[4];
-						if (File.Read(VersionPart, 4)) {
-							if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
-								Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-								if (Version >= 700 && Version <= LATEST) {
-									Tibia::SetVersionString(Version);
-									return Version;
-								}
+				if (File.Open(FileName, OPEN_EXISTING) && File.Skip(32)) {
+					BYTE VersionPart[4];
+					if (File.Read(VersionPart, 4)) {
+						if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
+							Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+							if (Version >= 700 && Version <= LATEST) {
+								Tibia::SetVersionString(Version);
+								return Version;
 							}
 						}
 					}
@@ -1160,7 +1158,8 @@ namespace Video {
 			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
 				InflateFile File;
-				if (File.Open(FileName, OPEN_EXISTING, 256)) {
+				BYTE Buffer[256];
+				if (File.Peek(FileName, Buffer, 256)) {
 					if (File.ReadWord(Version)) {
 						if (File.ReadWord(Version)) {
 							if (Version >= 700 && Version <= LATEST) {
