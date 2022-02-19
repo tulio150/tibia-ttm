@@ -303,7 +303,7 @@ public:
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
 		next_in = LPBYTE(Data);
 		avail_in = Size;
-		while (avail_in) {
+		do {
 			if (deflate(this, Z_NO_FLUSH) != Z_OK) {
 				return FALSE;
 			}
@@ -314,7 +314,7 @@ public:
 				next_out = Buffer;
 				avail_out = sizeof(Buffer);
 			}
-		}
+		} while (avail_in);
 		return TRUE;
 	}
 	BOOL WriteByte(CONST BYTE Data) {
