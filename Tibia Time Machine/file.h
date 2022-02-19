@@ -212,58 +212,111 @@ struct LzmaFile : public BufferedFile {
 	}
 };
 
-class GzipFile {
-	gzFile File;
-
+class InflateFile : private BufferedFile, z_stream {
 public:
-	GzipFile() : File(NULL) {}
-	~GzipFile() {
-		gzclose_r(File);
+	InflateFile() {
+		zalloc = Z_NULL;
+		zfree = Z_NULL;
+	}
+	~InflateFile() {
+		inflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		CONST LPCSTR GzipModes[] = { "", "wx", "w", "r", "a" };
-		return BOOL(File = gzopen_t(FileName, GzipModes[Flag]));
-	}
-
-	BOOL Save(CONST LPCTSTR FileName) {
-		if (gzclose_w(File) == Z_OK) {
-			File = NULL;
-			return TRUE;
+	BOOL Peek(CONST LPCTSTR FileName, CONST DWORD Size) {
+		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
+			if (Start(Size)) {
+				ReadingFile File;
+				if (File.Open(FileName, OPEN_EXISTING)) {
+					next_in = Data;
+					avail_in = Size;
+					return File.Read(Data, Size);
+				}
+			}
 		}
-		DeleteFile(FileName);
-		File = NULL;
 		return FALSE;
 	}
-	VOID Delete(CONST LPCTSTR FileName) {
-		gzclose_w(File); // gzip does not provide a way to cancel without flushing
-		DeleteFile(FileName);
-		File = NULL;
+	BOOL Open(CONST LPCTSTR FileName) {
+		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
+			if (BufferedFile::Open(FileName)) {
+				next_in = Data;
+				avail_in = End - Data;
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
+	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
+		next_out = LPBYTE(Dest);
+		avail_out = Size;
+		if (inflate(this, Z_SYNC_FLUSH) < Z_OK) {
+			return FALSE;
+		}
+		return !avail_out;
+	}
+	BOOL ReadByte(BYTE& Dest) {
+		return Read(&Dest, 1);
+	}
+	BOOL ReadWord(WORD& Dest) {
+		return Read(&Dest, 2);
+	}
+	BOOL ReadDword(DWORD& Dest) {
+		return Read(&Dest, 4);
+	}
+};
+
+class DeflateFile : public WritingFile, private z_stream {
+	BYTE Buffer[0x20000];
+public:
+	DeflateFile() {
+		zalloc = Z_NULL;
+		zfree = Z_NULL;
+	}
+	~DeflateFile() {
+		deflateEnd(this);
 	}
 
-	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) CONST {
-		return gzwrite(File, Data, Size) == Size;
+	BOOL Open(CONST LPCTSTR FileName) {
+		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK) {
+			if (WritingFile::Open(FileName, CREATE_ALWAYS)) {
+				next_out = Buffer;
+				avail_out = sizeof(Buffer);
+				return TRUE;
+			}
+		}
+		return FALSE;
 	}
-	BOOL WriteByte(CONST BYTE Data) CONST {
+	BOOL Write() {
+		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
+			if (avail_out || !WritingFile::Write(Buffer, sizeof(Buffer))) {
+				return FALSE;
+			}
+			next_out = Buffer;
+			avail_out = sizeof(Buffer);
+		}
+		return WritingFile::Write(Buffer, sizeof(Buffer) - avail_out);
+	}
+	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
+		next_in = LPBYTE(Data);
+		avail_in = Size;
+		while (deflate(this, Z_NO_FLUSH) != Z_STREAM_ERROR) {
+			if (avail_out) {
+				return !avail_in;
+			}
+			if (!WritingFile::Write(Buffer, sizeof(Buffer))) {
+				return FALSE;
+			}
+			next_out = Buffer;
+			avail_out = sizeof(Buffer);
+		}
+		return FALSE;
+	}
+	BOOL WriteByte(CONST BYTE Data) {
 		return Write(&Data, 1);
 	}
-	BOOL WriteWord(CONST WORD Data) CONST {
+	BOOL WriteWord(CONST WORD Data) {
 		return Write(&Data, 2);
 	}
-	BOOL WriteDword(CONST DWORD Data) CONST {
+	BOOL WriteDword(CONST DWORD Data) {
 		return Write(&Data, 4);
-	}
-
-	BOOL Read(CONST LPVOID Data, CONST DWORD Size) CONST {
-		return gzread(File, Data, Size) == Size;
-	}
-	BOOL ReadByte(BYTE& Data) CONST {
-		return Read(&Data, 1);
-	}
-	BOOL ReadWord(WORD& Data) CONST {
-		return Read(&Data, 2);
-	}
-	BOOL ReadDword(DWORD& Data) CONST {
-		return Read(&Data, 4);
 	}
 };

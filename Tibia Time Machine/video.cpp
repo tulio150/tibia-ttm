@@ -674,8 +674,8 @@ namespace Video {
 	}
 
 	UINT SaveTMV() {
-		GzipFile File;
-		if (!File.Open(FileName, CREATE_ALWAYS)) {
+		DeflateFile File;
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
@@ -699,8 +699,8 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
-		PacketData* Packet = Parser->GetPacketData(*(Current = First));
 		DWORD Size;
+		PacketData* Packet = Parser->GetPacketData(*(Current = First));
 		if ((Size = Packet->RawSize()) > 0xFFFF) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -742,18 +742,18 @@ namespace Video {
 				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			
 		}
 		MainWnd::Progress_Start();
-		if (!File.Save(FileName)) {
+		if (!File.Write()) {
+			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
 		return NULL;
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
-		GzipFile File;
-		if (!File.Open(FileName, OPEN_EXISTING)) {
+		InflateFile File;
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -1157,8 +1157,8 @@ namespace Video {
 				}
 			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
-				GzipFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
+				InflateFile File;
+				if (File.Peek(FileName, 256)) {
 					if (File.ReadWord(Version)) {
 						if (File.ReadWord(Version)) {
 							if (Version >= 700 && Version <= LATEST) {
