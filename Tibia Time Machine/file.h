@@ -25,7 +25,7 @@ public:
 };
 
 struct ReadingFile : public GenericFile {
-	BOOL Open(CONST LPCTSTR FileName, DWORD Flag) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		File = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 		return File != INVALID_HANDLE_VALUE;
 	}
@@ -51,7 +51,7 @@ struct ReadingFile : public GenericFile {
 };
 
 struct WritingFile : public GenericFile {
-	BOOL Open(CONST LPCTSTR FileName, DWORD Flag) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 		return File != INVALID_HANDLE_VALUE;
 	}
@@ -114,9 +114,9 @@ public:
 	VOID WriteDword(CONST DWORD Src) {
 		return Write(&Src, 4);
 	}
-	BOOL Save(CONST LPCTSTR FileName) {
+	BOOL Save(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		WritingFile File;
-		if (File.Open(FileName, CREATE_ALWAYS)) {
+		if (File.Open(FileName, Flag)) {
 			if (File.Write(Ptr, Data - Ptr)) {
 				return BOOL(End = Data);
 			}
@@ -125,9 +125,20 @@ public:
 		return FALSE;
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag, CONST DWORD Size) {
+		if (Start(Size)) {
+			ReadingFile File;
+			if (File.Open(FileName, Flag)) {
+				if (File.Read(Data, Size)) {
+					return BOOL(End = Data + Size);
+				}
+			}
+		}
+		return FALSE;
+	}
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		ReadingFile File;
-		if (File.Open(FileName, OPEN_EXISTING)) {
+		if (File.Open(FileName, Flag)) {
 			if (DWORD Size = File.GetSize()) {
 				if (Start(Size)) {
 					if (File.Read(Data, Size)) {
@@ -222,22 +233,19 @@ public:
 		inflateEnd(this);
 	}
 
-	BOOL Peek(CONST LPCTSTR FileName, CONST DWORD Size) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag, CONST DWORD Size) {
 		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
-			if (Start(Size)) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					next_in = Data;
-					avail_in = Size;
-					return File.Read(Data, Size);
-				}
+			if (BufferedFile::Open(FileName, Flag, Size)) {
+				next_in = Data;
+				avail_in = Size;
+				return TRUE;
 			}
 		}
 		return FALSE;
 	}
-	BOOL Open(CONST LPCTSTR FileName) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
-			if (BufferedFile::Open(FileName)) {
+			if (BufferedFile::Open(FileName, Flag)) {
 				next_in = Data;
 				avail_in = End - Data;
 				return TRUE;
@@ -248,10 +256,7 @@ public:
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);
 		avail_out = Size;
-		if (inflate(this, Z_SYNC_FLUSH) < Z_OK) {
-			return FALSE;
-		}
-		return !avail_out;
+		return inflate(this, Z_SYNC_FLUSH) >= Z_OK && !avail_out;
 	}
 	BOOL ReadByte(BYTE& Dest) {
 		return Read(&Dest, 1);
@@ -275,9 +280,9 @@ public:
 		deflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK) {
-			if (WritingFile::Open(FileName, CREATE_ALWAYS)) {
+			if (WritingFile::Open(FileName, Flag)) {
 				next_out = Buffer;
 				avail_out = sizeof(Buffer);
 				return TRUE;
@@ -298,17 +303,19 @@ public:
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
 		next_in = LPBYTE(Data);
 		avail_in = Size;
-		while (deflate(this, Z_NO_FLUSH) != Z_STREAM_ERROR) {
-			if (avail_out) {
-				return !avail_in;
-			}
-			if (!WritingFile::Write(Buffer, sizeof(Buffer))) {
+		while (avail_in) {
+			if (deflate(this, Z_NO_FLUSH) != Z_OK) {
 				return FALSE;
 			}
-			next_out = Buffer;
-			avail_out = sizeof(Buffer);
+			if (!avail_out) {
+				if (!WritingFile::Write(Buffer, sizeof(Buffer))) {
+					return FALSE;
+				}
+				next_out = Buffer;
+				avail_out = sizeof(Buffer);
+			}
 		}
-		return FALSE;
+		return TRUE;
 	}
 	BOOL WriteByte(CONST BYTE Data) {
 		return Write(&Data, 1);

@@ -311,7 +311,7 @@ namespace Video {
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
 		BufferedFile File;  // faster than ReadingFile, uses more memory (should we have a SafeOpen for big files?)
-		if (!File.Open(FileName)) {
+		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -579,7 +579,7 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		MainWnd::Progress_Start();
-		if (!File.Save(FileName)) {
+		if (!File.Save(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
@@ -587,7 +587,7 @@ namespace Video {
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
 		LzmaFile File;
-		if (!File.Open(FileName)) {
+		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		LPBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
@@ -675,7 +675,7 @@ namespace Video {
 
 	UINT SaveTMV() {
 		DeflateFile File;
-		if (!File.Open(FileName)) {
+		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
@@ -699,8 +699,8 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
-		DWORD Size;
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
+		DWORD Size;
 		if ((Size = Packet->RawSize()) > 0xFFFF) {
 			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -753,7 +753,7 @@ namespace Video {
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
 		InflateFile File;
-		if (!File.Open(FileName)) {
+		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -785,14 +785,16 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				BYTE Data[0xFFFF];
-				if (!File.Read(Data,Size)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!Src.Read(Data, Size)) {
-					CancelOpen(Override);
-					return Src.Time;
+				if (Size) { // TMV adds zero-sized packets to delay between merged videos
+					BYTE Data[0xFFFF];
+					if (!File.Read(Data, Size)) {
+						CancelOpen(Override);
+						return ERROR_CORRUPT_VIDEO;
+					}
+					if (!Src.Read(Data, Size)) {
+						CancelOpen(Override);
+						return Src.Time;
+					}
 				}
 			}
 			else if (Marker != TRUE) {
@@ -838,7 +840,7 @@ namespace Video {
 			File.Write(Packet, Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!File.Save(FileName)) {
+		if (!File.Save(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
@@ -864,7 +866,7 @@ namespace Video {
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
 		BufferedFile File; // faster than ReadingFile, uses more memory
-		if (!File.Open(FileName)) {
+		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
@@ -1158,7 +1160,7 @@ namespace Video {
 			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
 				InflateFile File;
-				if (File.Peek(FileName, 256)) {
+				if (File.Open(FileName, OPEN_EXISTING, 256)) {
 					if (File.ReadWord(Version)) {
 						if (File.ReadWord(Version)) {
 							if (Version >= 700 && Version <= LATEST) {
