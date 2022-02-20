@@ -6,13 +6,6 @@ class GenericFile {
 protected:
 	HANDLE File;
 
-	HANDLE Reopen(CONST LPCTSTR FileName, CONST DWORD Access, CONST DWORD Share, CONST DWORD Flags) {
-		if (HANDLE(WINAPI* ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
-			return ReOpenFile(File, Access, Share, Flags);
-		}
-		return CreateFile(FileName, Access, Share, NULL, OPEN_EXISTING, Flags, NULL); // Windows XP fallback
-	}
-
 public:
 	GenericFile(): File(INVALID_HANDLE_VALUE) {}
 	~GenericFile() {
@@ -21,25 +14,18 @@ public:
 
 	DWORD GetSize() CONST {
 		LARGE_INTEGER Size;
-		if (!GetFileSizeEx(File, &Size)) {
-			return 0;
-		}
-		if (Size.HighPart) {
-			return INVALID_SET_FILE_POINTER;
-		}
-		return Size.LowPart;
+		return GetFileSizeEx(File, &Size) ? !Size.HighPart ? Size.LowPart : INVALID_FILE_SIZE : 0;
 	}
 };
 
 struct ReadingFile : public GenericFile {
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		File = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
-		return File != INVALID_HANDLE_VALUE;
+		return (File = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 
 	BOOL Skip(CONST DWORD Size) CONST {
-		LONG High = 0;
-		return SetFilePointer(File, Size, &High, FILE_CURRENT) != INVALID_SET_FILE_POINTER || GetLastError() == NO_ERROR;
+		LARGE_INTEGER Position = { Size, 0 };
+		return SetFilePointerEx(File, Position, NULL, FILE_CURRENT);
 	}
 	BOOL Read(CONST LPVOID Data, CONST DWORD Size) CONST {
 		DWORD Read;
@@ -59,12 +45,12 @@ struct ReadingFile : public GenericFile {
 
 struct WritingFile : public GenericFile {
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
-		return File != INVALID_HANDLE_VALUE;
+		return (File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 
 	VOID Delete(CONST LPCTSTR FileName) {
-		if (!CloseHandle(Reopen(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE))) {
+		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
+		if (!CloseHandle(ReOpenFile ? ReOpenFile(File, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
 			DeleteFile(FileName);
 			SetFilePointer(File, 0, NULL, FILE_BEGIN);
 			SetEndOfFile(File);
@@ -72,8 +58,7 @@ struct WritingFile : public GenericFile {
 	}
 
 	VOID Append() CONST {
-		LONG High = 0;
-		SetFilePointer(File, 0, &High, FILE_END);
+		SetFilePointer(File, 0, NULL, FILE_END);
 	}
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) CONST {
 		DWORD Written;
@@ -134,20 +119,9 @@ public:
 		ReadingFile File;
 		if (File.Open(FileName, Flag)) {
 			if (DWORD Size = File.GetSize()) {
-				if (Start(Size)) {
-					if (File.Read(Data, Size)) {
-						return BOOL(End = Data + Size);
-					}
+				if (Start(Size) && File.Read(Data, Size)) {
+					return BOOL(End = Data + Size);
 				}
-			}
-		}
-		return FALSE;
-	}
-	BOOL Peek(CONST LPCTSTR FileName, CONST LPBYTE Buffer, CONST DWORD Size) {
-		ReadingFile File;
-		if (File.Open(FileName, OPEN_EXISTING)) {
-			if (File.Read(Data = Buffer, Size)) {
-				return BOOL(End = Data + Size);
 			}
 		}
 		return FALSE;
@@ -157,10 +131,7 @@ public:
 	}
 	LPBYTE Skip(CONST DWORD Size) {
 		LPBYTE Result = Data;
-		if ((Data += Size) > End) {
-			return NULL;
-		}
-		return Result;
+		return (Data += Size) <= End ? Result : NULL;
 	}
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		if (LPBYTE Src = Skip(Size)) {
@@ -198,7 +169,7 @@ struct LzmaFile : public BufferedFile {
 		Data = End - Size - 8;
 		WriteDword(Size);
 		WriteDword(0);
-		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 9, 0, 3, 0, 2, 32, 4, Callback)) {
+		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
 			return BOOL(Data += Size);
 		}
@@ -236,25 +207,13 @@ public:
 		inflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
-			if (BufferedFile::Open(FileName, Flag)) {
-				next_in = Data;
-				avail_in = End - Data;
-				return TRUE;
-			}
-		}
-		return FALSE;
+	BOOL Load(CONST LPBYTE Buffer, CONST DWORD Size) {
+		next_in = Buffer;
+		avail_in = Size;
+		return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
 	}
-	BOOL Peek(CONST LPCTSTR FileName, CONST LPBYTE Buffer, CONST DWORD Size) {
-		if (inflateInit2(this, MAX_WBITS + 16) == Z_OK) {
-			if (BufferedFile::Peek(FileName, Buffer, Size)) {
-				next_in = Buffer;
-				avail_in = Size;
-				return TRUE;
-			}
-		}
-		return FALSE;
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		return BufferedFile::Open(FileName, Flag) && Load(Data, End - Data);
 	}
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);
@@ -285,22 +244,15 @@ public:
 	}
 
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK) {
-			if (WritingFile::Open(FileName, Flag)) {
-				next_out = Buffer;
-				avail_out = sizeof(Buffer);
-				return TRUE;
-			}
-		}
-		return FALSE;
+		next_out = Buffer;
+		avail_out = sizeof(Buffer);
+		return WritingFile::Open(FileName, Flag) && deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK;
 	}
 	BOOL Save() {
 		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
-			if (avail_out || !WritingFile::Write(Buffer, sizeof(Buffer))) {
+			if (avail_out || !WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer))) {
 				return FALSE;
 			}
-			next_out = Buffer;
-			avail_out = sizeof(Buffer);
 		}
 		return WritingFile::Write(Buffer, sizeof(Buffer) - avail_out);
 	}
@@ -308,15 +260,8 @@ public:
 		next_in = LPBYTE(Data);
 		avail_in = Size;
 		do {
-			if (deflate(this, Z_NO_FLUSH) != Z_OK) {
+			if (deflate(this, Z_NO_FLUSH) != Z_OK || (!avail_out && !WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
 				return FALSE;
-			}
-			if (!avail_out) {
-				if (!WritingFile::Write(Buffer, sizeof(Buffer))) {
-					return FALSE;
-				}
-				next_out = Buffer;
-				avail_out = sizeof(Buffer);
 			}
 		} while (avail_in);
 		return TRUE;

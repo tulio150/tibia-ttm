@@ -1130,10 +1130,18 @@ namespace Video {
 	WORD GetFileVersion(CONST LPCTSTR FileName) {
 		if (LPCTSTR Extension = PathFindExtension(FileName)) {
 			WORD Version;
+			ReadingFile File;
 			if (!_tcsicmp(Extension, _T(".ttm"))) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.ReadWord(Version)) {
+				if (File.Open(FileName, OPEN_EXISTING) && File.ReadWord(Version) && Version >= 700 && Version <= LATEST) {
+					Tibia::SetVersionString(Version);
+					return Version;
+				}
+			}
+			else if (!_tcsicmp(Extension, _T(".cam"))) {
+				if (File.Open(FileName, OPEN_EXISTING) && File.Skip(32)) {
+					BYTE VersionPart[4];
+					if (File.Read(VersionPart, 4) && VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
+						Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
 						if (Version >= 700 && Version <= LATEST) {
 							Tibia::SetVersionString(Version);
 							return Version;
@@ -1141,43 +1149,22 @@ namespace Video {
 					}
 				}
 			}
-			else if (!_tcsicmp(Extension, _T(".cam"))) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING) && File.Skip(32)) {
-					BYTE VersionPart[4];
-					if (File.Read(VersionPart, 4)) {
-						if (VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
-							Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-							if (Version >= 700 && Version <= LATEST) {
-								Tibia::SetVersionString(Version);
-								return Version;
-							}
-						}
-					}
-				}
-			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
-				InflateFile File;
 				BYTE Buffer[256];
-				if (File.Peek(FileName, Buffer, 256)) {
-					if (File.ReadWord(Version)) {
-						if (File.ReadWord(Version)) {
-							if (Version >= 700 && Version <= LATEST) {
-								Tibia::SetVersionString(Version);
-								return Version;
-							}
+				if (File.Open(FileName, OPEN_EXISTING) && File.Read(Buffer, 256)) {
+					InflateFile File;
+					if (File.Load(Buffer, 256)) {
+						if (File.ReadWord(Version) && File.ReadWord(Version) && Version >= 700 && Version <= LATEST) {
+							Tibia::SetVersionString(Version);
+							return Version;
 						}
 					}
 				}
 			}
 			else if (!_tcsicmp(Extension, _T(".rec"))) {
-				ReadingFile File;
-				if (File.Open(FileName, OPEN_EXISTING)) {
-					if (File.ReadWord(Version)) {
-						Version = GuessVersion(LOBYTE(Version), HIBYTE(Version));
-						Tibia::SetVersionString(Version);
-						return Version;
-					}
+				if (File.Open(FileName, OPEN_EXISTING) && File.ReadWord(Version)) {
+					Tibia::SetVersionString(Version = GuessVersion(LOBYTE(Version), HIBYTE(Version)));
+					return Version;
 				}
 			}
 		}
