@@ -126,9 +126,6 @@ public:
 		}
 		return FALSE;
 	}
-	BOOL Reset(CONST DWORD Offset) {
-		return BOOL(Data = Ptr + Offset);
-	}
 	LPBYTE Skip(CONST DWORD Size) {
 		LPBYTE Result = Data;
 		return (Data += Size) <= End ? Result : NULL;

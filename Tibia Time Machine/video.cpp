@@ -1151,9 +1151,9 @@ namespace Video {
 			}
 			else if (!_tcsicmp(Extension, _T(".tmv"))) {
 				BYTE Buffer[256];
-				if (File.Open(FileName, OPEN_EXISTING) && File.Read(Buffer, 256)) {
+				if (File.Open(FileName, OPEN_EXISTING) && File.Read(Buffer, sizeof(Buffer))) {
 					InflateFile File;
-					if (File.Load(Buffer, 256)) {
+					if (File.Load(Buffer, sizeof(Buffer))) {
 						if (File.ReadWord(Version) && File.ReadWord(Version) && Version >= 700 && Version <= LATEST) {
 							Tibia::SetVersionString(Version);
 							return Version;
