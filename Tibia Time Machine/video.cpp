@@ -1127,50 +1127,6 @@ namespace Video {
 		MainWnd::Progress_Stop();
 	}
 
-	WORD GetFileVersion(CONST LPCTSTR FileName) {
-		if (LPCTSTR Extension = PathFindExtension(FileName)) {
-			WORD Version;
-			ReadingFile File;
-			if (!_tcsicmp(Extension, _T(".ttm"))) {
-				if (File.Open(FileName, OPEN_EXISTING) && File.ReadWord(Version) && Version >= 700 && Version <= LATEST) {
-					Tibia::SetVersionString(Version);
-					return Version;
-				}
-			}
-			else if (!_tcsicmp(Extension, _T(".cam"))) {
-				if (File.Open(FileName, OPEN_EXISTING) && File.Skip(32)) {
-					BYTE VersionPart[4];
-					if (File.Read(VersionPart, 4) && VersionPart[0] < 100 && VersionPart[1] < 10 && VersionPart[2] < 10 && !VersionPart[3]) {
-						Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
-						if (Version >= 700 && Version <= LATEST) {
-							Tibia::SetVersionString(Version);
-							return Version;
-						}
-					}
-				}
-			}
-			else if (!_tcsicmp(Extension, _T(".tmv"))) {
-				BYTE Buffer[256];
-				if (File.Open(FileName, OPEN_EXISTING) && File.Read(Buffer, sizeof(Buffer))) {
-					InflateFile File;
-					if (File.Load(Buffer, sizeof(Buffer))) {
-						if (File.ReadWord(Version) && File.ReadWord(Version) && Version >= 700 && Version <= LATEST) {
-							Tibia::SetVersionString(Version);
-							return Version;
-						}
-					}
-				}
-			}
-			else if (!_tcsicmp(Extension, _T(".rec"))) {
-				if (File.Open(FileName, OPEN_EXISTING) && File.ReadWord(Version)) {
-					Tibia::SetVersionString(Version = GuessVersion(LOBYTE(Version), HIBYTE(Version)));
-					return Version;
-				}
-			}
-		}
-		return NULL;
-	}
-
 	UINT_PTR CALLBACK FileDialogHook(HWND Dialog, UINT Message, WPARAM Wp, LPARAM Lp) {
 		switch (Message) {
 			case WM_NOTIFY:
@@ -1181,17 +1137,6 @@ namespace Video {
 							TCHAR Overrride[40];
 							LoadString(NULL, LABEL_OVERRIDE, Overrride, 40);
 							CommDlg_OpenSave_SetControlText(Parent, chx1, Overrride);
-							CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion(FileName) ? Tibia::VersionString : NULL);
-							EnableWindow(GetDlgItem(Parent, pshHelp), FALSE);
-						}
-						break;
-					case CDN_SELCHANGE:
-						if (!Last) {
-							HWND Parent = GetParent(Dialog);
-							TCHAR FileName[MAX_PATH];
-							if (CommDlg_OpenSave_GetFilePath(Parent, FileName, MAX_PATH)) {
-								CommDlg_OpenSave_SetControlText(Parent, pshHelp, GetFileVersion(FileName) ? Tibia::VersionString : NULL);
-							}
 						}
 						break;
 					case CDN_FILEOK:
@@ -1249,7 +1194,7 @@ namespace Video {
 		else {
 			OpenFileName.nFilterIndex = FILETYPE_ALL;
 			OpenFileName.lCustData = LPARAM(OpenMultiple);
-			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_FILEMUSTEXIST | OFN_SHOWHELP;
+			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_FILEMUSTEXIST;
 			LoadString(NULL, TITLE_OPEN_VIDEO, Title, 20);
 			if (GetOpenFileName(&OpenFileName)) {
 				Tibia::AutoPlay();
