@@ -176,7 +176,6 @@ namespace MainWnd {
 		Icon.hIcon = LoadSmallIcon(GetModuleHandle(NULL), Tibia::GetIcon());
 		Icon.uTimeout = 10000;
 		Icon.dwInfoFlags = NIIF_USER;
-		Tibia::SetVersionString(Tibia::Version);
 		if (Tibia::HostLen) {
 			CopyMemory(Icon.szInfoTitle, _T("OpenTibia "), TLEN(10));
 			CopyMemory(Icon.szInfoTitle + 10, Tibia::VersionString, sizeof(Tibia::VersionString));
