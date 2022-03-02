@@ -108,7 +108,7 @@ public:
 		WritingFile File;
 		if (File.Open(FileName, Flag)) {
 			if (File.Write(Ptr, Data - Ptr)) {
-				return BOOL(End = Data);
+				return TRUE;
 			}
 			File.Delete(FileName);
 		}

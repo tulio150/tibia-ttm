@@ -512,26 +512,25 @@ namespace MainWnd {
 	}
 
 	VOID OnRegister() {
-		TCHAR CommandPath[MAX_PATH];
-		GetModuleFileName(NULL, CommandPath, MAX_PATH);
-
-		TCHAR IconPath[MAX_PATH];
-		CopyMemory(IconPath, CommandPath, TLEN(MAX_PATH));
-
-		PathQuoteSpaces(CommandPath);
-		SIZE_T CommandLen = _tcslen(CommandPath);
-		CopyMemory(CommandPath + CommandLen, _T(" \"%1\""), TLEN(6));
-		CommandLen += 5;
-
-		SIZE_T IconLen = _tcslen(IconPath);
-		CopyMemory(IconPath + IconLen, _T(",1"), TLEN(3));
-		IconLen += 2;
-
-		TCHAR VideoDescription[20];
-		SIZE_T DescriptionLen = LoadString(NULL, FILETYPE_TTM, VideoDescription, 20);
-
 		HKEY RootKey;
 		if (RegOpenKeyEx(GetKeyState(VK_SHIFT) < 0 ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER, _T("Software\\Classes"), NULL, KEY_CREATE_SUB_KEY, &RootKey) == ERROR_SUCCESS) {
+			TCHAR VideoDescription[20];
+			SIZE_T DescriptionLen = LoadString(NULL, FILETYPE_TTM, VideoDescription, 20);
+
+			TCHAR IconPath[MAX_PATH + 3];
+			GetModuleFileName(NULL, IconPath, MAX_PATH);
+			SIZE_T IconLen = _tcslen(IconPath);
+
+			TCHAR CommandPath[MAX_PATH + 8];
+			CopyMemory(CommandPath, IconPath, TLEN(IconLen + 1));
+			PathQuoteSpaces(CommandPath);
+			SIZE_T CommandLen = _tcslen(CommandPath);
+			CopyMemory(CommandPath + CommandLen, _T(" \"%1\""), TLEN(6));
+			CommandLen += 5;
+
+			CopyMemory(IconPath + IconLen, _T(",1"), TLEN(3));
+			IconLen += 2;
+
 			HKEY ClassKey;
 			if (RegCreateKeyEx(RootKey, _T("tibia_ttm"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
 				RegSetValueEx(ClassKey, _T("InfoTip"), 0, REG_SZ, LPBYTE(_T("prop:System.FileVersion;System.Size;System.FileExtension;System.DateModified")), TLEN(76));
@@ -553,8 +552,8 @@ namespace MainWnd {
 					RegCloseKey(ClassKey);
 				}
 			}
-			IconPath[IconLen - 1] = '5';
 			if (RegCreateKeyEx(RootKey, _T("otserv"), 0, NULL, NULL, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, NULL, &ClassKey, NULL) == ERROR_SUCCESS) {
+				IconPath[IconLen - 1] = '5';
 				RegSetValueEx(ClassKey, _T("URL Protocol"), 0, REG_SZ, NULL, 0);
 				ShellRegister(ClassKey, _T("URL:Open Tibia Server"), 21, CommandPath, CommandLen, IconPath, IconLen);
 			}
