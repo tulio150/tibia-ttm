@@ -18,7 +18,7 @@ public:
 
 	DWORD GetSize() CONST {
 		LARGE_INTEGER Size;
-		return GetFileSizeEx(File, &Size) ? !Size.HighPart ? Size.LowPart : INVALID_FILE_SIZE : 0;
+		return GetFileSizeEx(File, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
 	}
 	BOOL Skip(CONST DWORD Size) CONST {
 		LARGE_INTEGER Position = { Size, 0 };
@@ -168,8 +168,9 @@ public:
 		ReadingFile File;
 		if (File.Open(FileName, Flag)) {
 			if (DWORD Size = File.GetSize()) {
-				if (Start(Size) && File.Read(Data, Size)) {
-					return BOOL(End = Data + Size);
+				if (Start(Size)) {
+					End = Data + Size;
+					return File.Read(Data, Size);
 				}
 			}
 		}
@@ -231,9 +232,9 @@ public:
 					End = Data;
 					if (Data = new(std::nothrow) BYTE[Size]) {
 						if (LzmaUncompress(Data, &Size, End, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+							End = Data + Size;
 							delete[] Ptr;
-							Ptr = Data;
-							return BOOL(End = Data + Size);
+							return BOOL(Ptr = Data);
 						}
 						delete[] Data;
 					}
@@ -244,13 +245,13 @@ public:
 	}
 };
 
-class InflateFile : private BufferedFile, z_stream {
+class GzrFile : private BufferedFile, z_stream {
 public:
-	InflateFile() {
+	GzrFile() {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
 	}
-	~InflateFile() {
+	~GzrFile() {
 		inflateEnd(this);
 	}
 
@@ -278,15 +279,15 @@ public:
 	}
 };
 
-class DeflateFile : private WritingFile, z_stream {
+class GzwFile : private WritingFile, z_stream {
 	BYTE Buffer[0x20000];
 
 public:
-	DeflateFile() {
+	GzwFile() {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
 	}
-	~DeflateFile() {
+	~GzwFile() {
 		deflateEnd(this);
 	}
 

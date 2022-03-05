@@ -530,7 +530,7 @@ namespace Video {
 				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFA2) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFEFF96) {
 				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
@@ -672,7 +672,7 @@ namespace Video {
 	}
 
 	UINT SaveTMV() {
-		DeflateFile File;
+		GzwFile File;
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -735,7 +735,7 @@ namespace Video {
 		return NULL;
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
-		InflateFile File;
+		GzrFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
