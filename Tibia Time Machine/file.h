@@ -2,27 +2,24 @@
 #include "framework.h"
 #include "zlib.h"
 
-class GenericFile {
+class ReadingFile {
 protected:
 	HANDLE File;
 
 public:
-	GenericFile(): File(INVALID_HANDLE_VALUE) {}
-	~GenericFile() {
+	ReadingFile(): File(INVALID_HANDLE_VALUE) {}
+	~ReadingFile() {
 		CloseHandle(File);
+	}
+
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		return (File = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 
 	DWORD GetSize() CONST {
 		LARGE_INTEGER Size;
 		return GetFileSizeEx(File, &Size) ? !Size.HighPart ? Size.LowPart : INVALID_FILE_SIZE : 0;
 	}
-};
-
-struct ReadingFile : public GenericFile {
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return (File = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
-	}
-
 	BOOL Skip(CONST DWORD Size) CONST {
 		LARGE_INTEGER Position = { Size, 0 };
 		return SetFilePointerEx(File, Position, NULL, FILE_CURRENT);
@@ -43,18 +40,28 @@ struct ReadingFile : public GenericFile {
 	}
 };
 
-struct WritingFile : public GenericFile {
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return (File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+class WritingFile : private ReadingFile {
+	LPCTSTR Delete;
+
+public:
+	WritingFile(): Delete(NULL) {}
+	~WritingFile() {
+		if (Delete) {
+			HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
+			if (!CloseHandle(ReOpenFile ? ReOpenFile(File, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(Delete, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
+				DeleteFile(Delete);
+				SetFilePointer(File, 0, NULL, FILE_BEGIN);
+				SetEndOfFile(File);
+			}
+		}
 	}
 
-	VOID Delete(CONST LPCTSTR FileName) {
-		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
-		if (!CloseHandle(ReOpenFile ? ReOpenFile(File, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
-			DeleteFile(FileName);
-			SetFilePointer(File, 0, NULL, FILE_BEGIN);
-			SetEndOfFile(File);
-		}
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		Delete = FileName;
+		return (File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+	}
+	VOID Save() {
+		Delete = NULL;
 	}
 
 	VOID Append() CONST {
@@ -72,6 +79,48 @@ struct WritingFile : public GenericFile {
 		return Write(&Data, 2);
 	}
 	BOOL WriteDword(CONST DWORD Data) CONST {
+		return Write(&Data, 4);
+	}
+};
+
+class StackFile : public WritingFile {
+	BYTE Buffer[0x20000];
+	DWORD Pos;
+
+public:
+	StackFile(): Pos(0) {}
+
+	BOOL Save() {
+		if (Pos && !WritingFile::Write(Buffer, Pos)) {
+			return FALSE;
+		}
+		WritingFile::Save();
+		return TRUE;
+	}
+	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
+		if (Size <= (sizeof(Buffer) - Pos)) {
+			CopyMemory(Buffer + Pos, Data, Size);
+			Pos += Size;
+		}
+		else {
+			if (Pos && !WritingFile::Write(Buffer, Pos)) {
+				return FALSE;
+			}
+			if (Size > sizeof(Buffer)) {
+				Pos = 0;
+				return WritingFile::Write(Buffer, Size);
+			}
+			CopyMemory(Buffer, Data, Pos = Size);
+		}
+		return TRUE;
+	}
+	BOOL WriteByte(CONST BYTE Data) {
+		return Write(&Data, 1);
+	}
+	BOOL WriteWord(CONST WORD Data) {
+		return Write(&Data, 2);
+	}
+	BOOL WriteDword(CONST DWORD Data) {
 		return Write(&Data, 4);
 	}
 };
@@ -96,21 +145,21 @@ public:
 		Data += Size;
 	}
 	VOID WriteByte(CONST BYTE Src) {
-		return Write(&Src, 1);
+		*Data++ = Src;
 	}
 	VOID WriteWord(CONST WORD Src) {
-		return Write(&Src, 2);
+		*(*(LPWORD*)&Data)++ = Src;
 	}
 	VOID WriteDword(CONST DWORD Src) {
-		return Write(&Src, 4);
+		*(*(LPDWORD*)&Data)++ = Src;
 	}
 	BOOL Save(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		WritingFile File;
 		if (File.Open(FileName, Flag)) {
 			if (File.Write(Ptr, Data - Ptr)) {
+				File.Save();
 				return TRUE;
 			}
-			File.Delete(FileName);
 		}
 		return FALSE;
 	}
@@ -154,7 +203,8 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-struct LzmaFile : public BufferedFile {
+class LzmaFile : public BufferedFile {
+public:
 	BOOL StartHeader(CONST DWORD Size, DWORD Header) {
 		return Start(Size + (Header += Size + 17)) ? BOOL(End = Data + Header) : FALSE;
 	}
@@ -228,7 +278,7 @@ public:
 	}
 };
 
-class DeflateFile : public WritingFile, private z_stream {
+class DeflateFile : private WritingFile, z_stream {
 	BYTE Buffer[0x20000];
 
 public:
@@ -251,7 +301,11 @@ public:
 				return FALSE;
 			}
 		}
-		return WritingFile::Write(Buffer, sizeof(Buffer) - avail_out);
+		if (!WritingFile::Write(Buffer, sizeof(Buffer) - avail_out)) {
+			return FALSE;
+		}
+		WritingFile::Save();
+		return TRUE;
 	}
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
 		next_in = LPBYTE(Data);

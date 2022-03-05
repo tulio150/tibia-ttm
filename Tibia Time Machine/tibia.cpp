@@ -417,6 +417,7 @@ namespace Tibia {
 				'=', CharDigits(5, Proxy::Login.Port)
 			};
 			if (File.Write(ServerString, 45)) {
+				File.Save();
 				return TRUE;
 			}
 		}

@@ -133,62 +133,55 @@ namespace Video {
 	}
 
 	UINT Save() {
-		WritingFile File; // avoid BufferedFile for the ability to save under low memory, and to avoid size calculations
+		StackFile File; // faster saving without allocations
 		if (!File.Open(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Tibia::Version)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteByte(Tibia::HostLen)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (Tibia::HostLen) {
 			if (!File.Write(Tibia::Host, Tibia::HostLen)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.WriteWord(Tibia::Port)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
 		if (!File.WriteDword(Last->Time)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
 		PacketData *Packet = Parser->GetPacketData(*(Current = First));
 		if (!File.Write(Packet, Packet->RawSize())) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		MainWnd::Progress_Set(0, Last->Time);
 		while (Current->Next) {
 			if (Current->IsLast()) {
 				if (!File.WriteByte(TRUE)) {
-					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
 			else {
 				if (!File.WriteByte(FALSE)) {
-					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 				if (!File.WriteWord(WORD(Current->Next->Time - Current->Time))) {
-					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			if (!File.Write(Packet, Packet->RawSize())) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
+		}
+		if (!File.Save()) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
 		return NULL;
@@ -310,7 +303,7 @@ namespace Video {
 	};
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;  // faster than ReadingFile, uses more memory (should we have a SafeOpen for big files?)
+		BufferedFile File;  // faster than ReadingFile, fails on huge files (should we have a SafeOpen for big files or use stack loading?)
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -534,15 +527,18 @@ namespace Video {
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFFFFA2) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		LzmaFile File;
 		if (!File.StartHeader(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
@@ -567,6 +563,7 @@ namespace Video {
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
 			if ((Size = Packet->RawSize()) > 0xFFFF) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			File.WriteWord(Size);
@@ -576,6 +573,7 @@ namespace Video {
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		if (!File.Compress(CAMProgressCallback)) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		MainWnd::Progress_Start();
@@ -679,73 +677,58 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Tibia::Version)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteDword(Last->Time)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteByte(FALSE)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteDword(0)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
 		DWORD Size;
 		if ((Size = Packet->RawSize()) > 0xFFFF) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Size)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.Write(Packet, Size)) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		while (Current->Next) {
 			if (Current->IsLast()) {
 				if (!File.WriteByte(TRUE)) { // I'm adding markers to the ends of the sessions
-					File.Delete(FileName);
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
 			if (!File.WriteByte(FALSE)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.WriteDword(Current->Next->Time - Current->Time)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			if ((Size = Packet->RawSize()) > 0xFFFF) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.WriteWord(Size)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.Write(Packet, Size)) {
-				File.Delete(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
 		MainWnd::Progress_Start();
 		if (!File.Save()) {
-			File.Delete(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
@@ -818,15 +801,18 @@ namespace Video {
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 14, Packets = 1;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFEFFFE) {
+			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFEFFF6) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		BufferedFile File; // could have been WritingFile, but this is faster and we already looped trough the packets
+		BufferedFile File;
 		if (!File.Start(Size)) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.WriteByte(RECVersion()); // this version control is what made me create ttm
@@ -865,7 +851,7 @@ namespace Video {
 		return LATEST; //never happens
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
-		BufferedFile File; // faster than ReadingFile, uses more memory
+		BufferedFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
