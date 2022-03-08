@@ -217,9 +217,16 @@ extern "C" { // Modded LzmaLib for compression progress
 }
 
 class LzmaFile : public MappedFile { // saving is still slow
+	LPBYTE Buf;
+
 public:
+	LzmaFile() : Buf(NULL) {}
+	~LzmaFile() {
+		delete[] Buf;
+	}
+
 	BOOL Create(CONST DWORD Size, DWORD Header) {
-		return (Ptr = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Ptr) + Header): FALSE;
+		return (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Buf) + Header): FALSE;
 	}
 	VOID EndHeader() {
 		Data = End;
@@ -232,16 +239,12 @@ public:
 		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
 			if (File::Create(FileName, Flag)) {
-				if (File::Write(Ptr, Data + Size - Ptr)) {
-					delete[] Ptr;
-					Ptr = NULL;
+				if (File::Write(Buf, Data + Size - Buf)) {
 					return TRUE;
 				}
 				Delete(FileName);
 			}
 		}
-		delete[] Ptr;
-		Ptr = NULL;
 		return FALSE;
 	}
 	BOOL Uncompress(CONST BOOL AllowTruncated) {
@@ -250,13 +253,11 @@ public:
 			if (CONST LPBYTE Props = Skip(5)) {
 				DWORD Size, Large;
 				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
-					End = Data;
-					if (Data = new(std::nothrow) BYTE[Size]) {
-						if (LzmaUncompress(Data, &Size, End, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
-							Unmap();
-							return BOOL(End = Data + Size);
+					if (Buf = new(std::nothrow) BYTE[Size]) {
+						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+							Unmap(); // free the file mapping already
+							return BOOL(End = (Data = Buf) + Size);
 						}
-						delete[] Data;
 					}
 				}
 			}
