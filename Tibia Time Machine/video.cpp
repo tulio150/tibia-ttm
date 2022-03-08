@@ -281,7 +281,7 @@ namespace Video {
 	}
 
 	struct FilePacket : private NeedParser, PacketBase {
-		BOOL Read(BufferedFile &File) {
+		BOOL Read(MappedFile &File) {
 			Set(File.Skip(2));
 			if (!P || !P->Size || !File.Skip(P->Size)) {
 				return FALSE;
@@ -303,7 +303,7 @@ namespace Video {
 	};
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;  // faster than ReadingFile, fails on huge files (should we have a SafeOpen for big files or use stack loading?)
+		MappedFile File; // fastest loading, still fails on huge files (can be fixed in the class)
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -332,7 +332,7 @@ namespace Video {
 		if (!File.ReadDword(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		FilePacket Src;
+		FilePacket Src; // parses the packet from the buffer (or mapping)
 		if (!Src.Read(File) || !Parser->PlayerData) {
 			return ERROR_CORRUPT_VIDEO;
 		}
@@ -536,7 +536,7 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		LzmaFile File;
+		LzmawFile File;
 		if (!File.StartHeader(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -584,7 +584,7 @@ namespace Video {
 		return NULL;
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmaFile File;
+		LzmarFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -695,6 +695,7 @@ namespace Video {
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
 		DWORD Size;
 		if ((Size = Packet->RawSize()) > 0xFFFF) {
+			File.Cancel();
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Size)) {
@@ -718,6 +719,7 @@ namespace Video {
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			if ((Size = Packet->RawSize()) > 0xFFFF) {
+				File.Cancel();
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.WriteWord(Size)) {
@@ -851,7 +853,7 @@ namespace Video {
 		return LATEST; //never happens
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
-		BufferedFile File;
+		MappedFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -905,8 +907,8 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				LPBYTE Data = File.Skip(Size);
-				if (!Data) {
+				BYTE Data[0xFFFF];
+				if (!File.Read(Data, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}

@@ -41,27 +41,17 @@ public:
 };
 
 class WritingFile : private ReadingFile {
-	LPCTSTR Delete;
-
 public:
-	WritingFile(): Delete(NULL) {}
-	~WritingFile() {
-		if (Delete) {
-			HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
-			if (!CloseHandle(ReOpenFile ? ReOpenFile(File, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(Delete, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
-				DeleteFile(Delete);
-				SetFilePointer(File, 0, NULL, FILE_BEGIN);
-				SetEndOfFile(File);
-			}
-		}
-	}
-
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		Delete = FileName;
 		return (File = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
-	VOID Save() {
-		Delete = NULL;
+	VOID Delete(CONST LPCTSTR FileName) {
+		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
+		if (!CloseHandle(ReOpenFile ? ReOpenFile(File, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
+			DeleteFile(FileName);
+			SetFilePointer(File, 0, NULL, FILE_BEGIN);
+			SetEndOfFile(File);
+		}
 	}
 
 	VOID Append() CONST {
@@ -83,18 +73,82 @@ public:
 	}
 };
 
-class StackFile : public WritingFile {
-	BYTE Buffer[0x20000];
-	DWORD Pos;
+class MappedFile : private ReadingFile {
+	HANDLE Map;
+
+protected:
+	LPBYTE Ptr;
+	LPBYTE Data;
+	LPBYTE End;
+
+	VOID Close() {
+		UnmapViewOfFile(Ptr);
+		Ptr = NULL;
+		CloseHandle(Map);
+		Map = NULL;
+		CloseHandle(File);
+		File = INVALID_HANDLE_VALUE;
+	}
 
 public:
-	StackFile(): Pos(0) {}
+	MappedFile(): Map(NULL), Ptr(NULL) {}
+	~MappedFile() {
+		UnmapViewOfFile(Ptr);
+		CloseHandle(Map);
+	}
 
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		if (ReadingFile::Open(FileName, Flag)) {
+			if (DWORD Size = GetSize()) {
+				if (Map = CreateFileMapping(File, NULL, PAGE_READONLY, NULL, NULL, NULL)) {
+					if (Ptr = LPBYTE(MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, NULL))) {
+						Data = Ptr;
+						End = Data + Size;
+						return TRUE;
+					}
+				}
+			}
+		}
+		return FALSE;
+	}
+	LPBYTE Skip(CONST DWORD Size) {
+		LPBYTE Result = Data;
+		return (Data += Size) <= End ? Result : NULL;
+	}
+	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
+		if (LPBYTE Src = Skip(Size)) {
+			return BOOL(CopyMemory(Dest, Src, Size));
+		}
+		return FALSE;
+	}
+	BOOL ReadByte(BYTE& Dest) {
+		return Read(&Dest, 1);
+	}
+	BOOL ReadWord(WORD& Dest) {
+		return Read(&Dest, 2);
+	}
+	BOOL ReadDword(DWORD& Dest) {
+		return Read(&Dest, 4);
+	}
+};
+
+class StackFile : private WritingFile {
+	LPCTSTR DeleteName;
+	DWORD Pos;
+	BYTE Buffer[0x20000];
+
+public:
+	StackFile(): Pos(0), DeleteName(NULL) {}
+
+	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+		DeleteName = FileName;
+		return WritingFile::Open(FileName, Flag);
+	}
 	BOOL Save() {
 		if (Pos && !WritingFile::Write(Buffer, Pos)) {
+			Delete(DeleteName);
 			return FALSE;
 		}
-		WritingFile::Save();
 		return TRUE;
 	}
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
@@ -104,13 +158,19 @@ public:
 		}
 		else {
 			if (Pos && !WritingFile::Write(Buffer, Pos)) {
+				Delete(DeleteName);
 				return FALSE;
 			}
-			if (Size > sizeof(Buffer)) {
-				Pos = 0;
-				return WritingFile::Write(Buffer, Size);
+			if (Size < sizeof(Buffer)) {
+				CopyMemory(Buffer, Data, Pos = Size);
 			}
-			CopyMemory(Buffer, Data, Pos = Size);
+			else {
+				Pos = 0;
+				if (!WritingFile::Write(Buffer, Size)) {
+					Delete(DeleteName);
+					return FALSE;
+				}
+			}
 		}
 		return TRUE;
 	}
@@ -122,6 +182,37 @@ public:
 	}
 	BOOL WriteDword(CONST DWORD Data) {
 		return Write(&Data, 4);
+	}
+};
+
+#define SZ_ERROR_DATA 1
+extern "C" { // Modded LzmaLib for compression progress
+	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
+	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPVOID Callback);
+	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
+}
+
+class LzmarFile : public MappedFile {
+public:
+	BOOL Uncompress(CONST BOOL AllowTruncated) {
+		DWORD OldSize;
+		if (ReadDword(OldSize) && (Data + OldSize <= End || (AllowTruncated && (OldSize = End - Data)))) {
+			if (CONST LPBYTE Props = Skip(5)) {
+				DWORD Size, Large;
+				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
+					End = Data;
+					if (Data = new(std::nothrow) BYTE[Size]) {
+						if (LzmaUncompress(Data, &Size, End, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+							End = Data + Size;
+							Close();
+							return TRUE;
+						}
+						delete[] Data;
+					}
+				}
+			}
+		}
+		return FALSE;
 	}
 };
 
@@ -157,54 +248,15 @@ public:
 		WritingFile File;
 		if (File.Open(FileName, Flag)) {
 			if (File.Write(Ptr, Data - Ptr)) {
-				File.Save();
 				return TRUE;
 			}
+			File.Delete(FileName);
 		}
 		return FALSE;
-	}
-
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		ReadingFile File;
-		if (File.Open(FileName, Flag)) {
-			if (DWORD Size = File.GetSize()) {
-				if (Start(Size)) {
-					End = Data + Size;
-					return File.Read(Data, Size);
-				}
-			}
-		}
-		return FALSE;
-	}
-	LPBYTE Skip(CONST DWORD Size) {
-		LPBYTE Result = Data;
-		return (Data += Size) <= End ? Result : NULL;
-	}
-	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
-		if (LPBYTE Src = Skip(Size)) {
-			return BOOL(CopyMemory(Dest, Src, Size));
-		}
-		return FALSE;
-	}
-	BOOL ReadByte(BYTE& Dest) {
-		return Read(&Dest, 1);
-	}
-	BOOL ReadWord(WORD& Dest) {
-		return Read(&Dest, 2);
-	}
-	BOOL ReadDword(DWORD& Dest) {
-		return Read(&Dest, 4);
 	}
 };
 
-#define SZ_ERROR_DATA 1
-extern "C" { // Modded LzmaLib for compression progress
-	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
-	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPVOID Callback);
-	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
-}
-
-class LzmaFile : public BufferedFile {
+class LzmawFile : public BufferedFile {
 public:
 	BOOL StartHeader(CONST DWORD Size, DWORD Header) {
 		return Start(Size + (Header += Size + 17)) ? BOOL(End = Data + Header) : FALSE;
@@ -223,29 +275,9 @@ public:
 		}
 		return FALSE;
 	}
-	BOOL Uncompress(CONST BOOL AllowTruncated) {
-		DWORD OldSize;
-		if (ReadDword(OldSize) && (Data + OldSize <= End || (AllowTruncated && (OldSize = End - Data)))) {
-			if (CONST LPBYTE Props = Skip(5)) {
-				DWORD Size, Large;
-				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
-					End = Data;
-					if (Data = new(std::nothrow) BYTE[Size]) {
-						if (LzmaUncompress(Data, &Size, End, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
-							End = Data + Size;
-							delete[] Ptr;
-							return BOOL(Ptr = Data);
-						}
-						delete[] Data;
-					}
-				}
-			}
-		}
-		return FALSE;
-	}
 };
 
-class GzrFile : private BufferedFile, z_stream {
+class GzrFile : private MappedFile, z_stream {
 public:
 	GzrFile() {
 		zalloc = Z_NULL;
@@ -255,13 +287,13 @@ public:
 		inflateEnd(this);
 	}
 
-	BOOL Load(CONST LPBYTE Buffer, CONST DWORD Size) {
-		next_in = Buffer;
-		avail_in = Size;
-		return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
-	}
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return BufferedFile::Open(FileName, Flag) && Load(Data, End - Data);
+		if (MappedFile::Open(FileName, Flag)) {
+			next_in = Data;
+			avail_in = End - Data;
+			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+		}
+		return FALSE;
 	}
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);
@@ -280,10 +312,11 @@ public:
 };
 
 class GzwFile : private WritingFile, z_stream {
+	LPCTSTR DeleteName;
 	BYTE Buffer[0x20000];
 
 public:
-	GzwFile() {
+	GzwFile() : DeleteName(NULL) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
 	}
@@ -292,20 +325,31 @@ public:
 	}
 
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		next_out = Buffer;
-		avail_out = sizeof(Buffer);
-		return WritingFile::Open(FileName, Flag) && deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK;
+		if (WritingFile::Open(FileName, Flag)) {
+			next_out = Buffer;
+			avail_out = sizeof(Buffer);
+			if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK) {
+				DeleteName = FileName;
+				return TRUE;
+			}
+			Delete(FileName);
+		}
+		return FALSE;
+	}
+	VOID Cancel() {
+		Delete(DeleteName);
 	}
 	BOOL Save() {
 		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
 			if (avail_out || !WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer))) {
+				Cancel();
 				return FALSE;
 			}
 		}
 		if (!WritingFile::Write(Buffer, sizeof(Buffer) - avail_out)) {
+			Cancel();
 			return FALSE;
 		}
-		WritingFile::Save();
 		return TRUE;
 	}
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
@@ -313,6 +357,7 @@ public:
 		avail_in = Size;
 		do {
 			if (deflate(this, Z_NO_FLUSH) != Z_OK || (!avail_out && !WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
+				Cancel();
 				return FALSE;
 			}
 		} while (avail_in);

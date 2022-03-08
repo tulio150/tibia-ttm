@@ -416,10 +416,7 @@ namespace Tibia {
 				'\r', '\n', 'S', 'e', 'r', 'v', 'e', 'r', 'P', 'o', 'r', 't',
 				'=', CharDigits(5, Proxy::Login.Port)
 			};
-			if (File.Write(ServerString, 45)) {
-				File.Save();
-				return TRUE;
-			}
+			return File.Write(ServerString, 45);
 		}
 		return FALSE;
 	}
