@@ -216,7 +216,7 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-class LzmaFile : public MappedFile { // saving is still very slow
+class LzmaFile : public MappedFile { // saving is still slow
 public:
 	BOOL Create(CONST DWORD Size, DWORD Header) {
 		return (Ptr = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Ptr) + Header): FALSE;
@@ -312,10 +312,7 @@ public:
 	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
 		next_out = Buffer;
 		avail_out = sizeof(Buffer);
-		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK) {
-			return BufferedFile::Create(FileName, Flag);
-		}
-		return FALSE;
+		return deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK && BufferedFile::Create(FileName, Flag);
 	}
 	BOOL Save() {
 		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
