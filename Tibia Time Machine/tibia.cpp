@@ -270,8 +270,8 @@ namespace Tibia {
 	BOOL ReadSignature(CONST LPTSTR Path, CONST DWORD Index) {
 		static CONST TCHAR Datafiles[3][10] = { _T("Tibia.dat"), _T("Tibia.spr"), _T("Tibia.pic") };
 		GetFullPathName(Datafiles[Index], MAX_PATH, Path, NULL);
-		ReadingFile File;
-		return File.Open(Path, OPEN_EXISTING) && File.ReadDword(Signatures[Index]);
+		File Datafile;
+		return Datafile.Open(Path, OPEN_EXISTING) && Datafile.ReadDword(Signatures[Index]);
 	}
 
 	UINT CheckClientPath(CONST LPCTSTR Path) { //TODO: check version if global client
@@ -407,16 +407,16 @@ namespace Tibia {
 
 	BOOL ChangeConfigHost(CONST LPTSTR Path) {
 		GetFullPathName(_T("Tibia.cfg"), MAX_PATH, Path, NULL);
-		WritingFile File;
-		if (File.Open(Path, OPEN_ALWAYS)) {
-			File.Append();
+		File Configfile;
+		if (Configfile.Create(Path, OPEN_ALWAYS)) {
+			Configfile.Append();
 			CONST CHAR ServerString[45] = {
 				'\r', '\n', 'S', 'e', 'r', 'v', 'e', 'r', 'A', 'd', 'd', 'r', 'e', 's', 's',
 				'=', '\"', '1', '2', '7', '.', '0', '.', '0', '.', '1', '\"',
 				'\r', '\n', 'S', 'e', 'r', 'v', 'e', 'r', 'P', 'o', 'r', 't',
 				'=', CharDigits(5, Proxy::Login.Port)
 			};
-			return File.Write(ServerString, 45);
+			return Configfile.Write(ServerString, 45);
 		}
 		return FALSE;
 	}

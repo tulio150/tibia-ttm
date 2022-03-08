@@ -133,8 +133,8 @@ namespace Video {
 	}
 
 	UINT Save() {
-		StackFile File; // faster saving without allocations
-		if (!File.Open(FileName, CREATE_ALWAYS)) {
+		BufferedFile File;
+		if (!File.Create(FileName, CREATE_ALWAYS)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Tibia::Version)) {
@@ -303,7 +303,7 @@ namespace Video {
 	};
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
-		MappedFile File; // fastest loading, still fails on huge files (can be fixed in the class)
+		MappedFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -530,15 +530,15 @@ namespace Video {
 				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 10) > 0x7FFEFF96) {
+			DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
+			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
 				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		LzmawFile File;
-		if (!File.StartHeader(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
-			DeleteFile(FileName);
+		LzmaFile File;
+		if (!File.Create(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
@@ -562,29 +562,20 @@ namespace Video {
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			if ((Size = Packet->RawSize()) > 0xFFFF) {
-				DeleteFile(FileName);
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			File.WriteWord(Size);
+			File.WriteWord(Size = Packet->RawSize());
 			File.WriteDword(Current->Time);
 			File.Write(Packet, Size);
 			File.WriteDword(crc32(0, Packet->Data, Packet->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!File.Compress(CAMProgressCallback)) {
-			DeleteFile(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		MainWnd::Progress_Start();
-		if (!File.Save(FileName, CREATE_ALWAYS)) {
+		if (!File.Compress(FileName, CREATE_ALWAYS, CAMProgressCallback)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
 		return NULL;
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmarFile File;
+		LzmaFile File;
 		if (!File.Open(FileName, OPEN_EXISTING)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -695,8 +686,7 @@ namespace Video {
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
 		DWORD Size;
 		if ((Size = Packet->RawSize()) > 0xFFFF) {
-			File.Cancel();
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			Size = NULL;
 		}
 		if (!File.WriteWord(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -719,8 +709,7 @@ namespace Video {
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			if ((Size = Packet->RawSize()) > 0xFFFF) {
-				File.Cancel();
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+				Size = NULL;
 			}
 			if (!File.WriteWord(Size)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -729,7 +718,6 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
-		MainWnd::Progress_Start();
 		if (!File.Save()) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -812,9 +800,8 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		BufferedFile File;
-		if (!File.Start(Size)) {
-			DeleteFile(FileName);
+		MappedFile File;
+		if (!File.Create(FileName, CREATE_ALWAYS, Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.WriteByte(RECVersion()); // this version control is what made me create ttm
@@ -828,7 +815,7 @@ namespace Video {
 			File.Write(Packet, Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!File.Save(FileName, CREATE_ALWAYS)) {
+		if (!File.Save(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
