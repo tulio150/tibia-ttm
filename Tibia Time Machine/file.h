@@ -10,8 +10,6 @@ protected:
 		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
 		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
 			DeleteFile(FileName);
-			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
-			SetEndOfFile(Handle);
 		}
 	}
 
@@ -21,8 +19,8 @@ public:
 		CloseHandle(Handle);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return (Handle = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+	BOOL Open(CONST LPCTSTR FileName) {
+		return (Handle = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 	DWORD GetSize() CONST {
 		LARGE_INTEGER Size;
@@ -46,11 +44,15 @@ public:
 		return Read(&Data, 4);
 	}
 
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return (Handle = CreateFile(FileName, FILE_READ_DATA | FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, Flag, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+	BOOL Create(CONST LPCTSTR FileName) {
+		return (Handle = CreateFile(FileName, FILE_READ_DATA | FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
-	VOID Append() CONST {
-		SetFilePointer(Handle, 0, NULL, FILE_END);
+	BOOL Append(CONST LPCTSTR FileName) {
+		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
+			SetFilePointer(Handle, 0, NULL, FILE_END);
+			return TRUE;
+		}
+		return FALSE;
 	}
 	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) CONST {
 		DWORD Written;
@@ -75,15 +77,6 @@ protected:
 	LPBYTE Data;
 	LPBYTE End;
 
-	VOID Unmap() {
-		UnmapViewOfFile(Ptr);
-		Ptr = NULL;
-		CloseHandle(Map);
-		Map = NULL;
-		CloseHandle(Handle);
-		Handle = INVALID_HANDLE_VALUE;
-	}
-
 public:
 	MappedFile(): Map(NULL), Ptr(NULL) {}
 	~MappedFile() {
@@ -91,8 +84,8 @@ public:
 		CloseHandle(Map);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		if (File::Open(FileName, Flag)) {
+	BOOL Open(CONST LPCTSTR FileName) {
+		if (File::Open(FileName)) {
 			if (DWORD Size = GetSize()) {
 				if (Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
 					if (Ptr = LPBYTE(MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size))) {
@@ -123,8 +116,8 @@ public:
 		return Read(&Dest, 4);
 	}
 
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Flag, CONST DWORD Size) {
-		if (File::Create(FileName, Flag)) {
+	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size) {
+		if (File::Create(FileName)) {
 			if (Map = CreateFileMapping(Handle, NULL, PAGE_READWRITE, NULL, Size, NULL)) {
 				if (Ptr = LPBYTE(MapViewOfFile(Map, FILE_MAP_WRITE, NULL, NULL, Size))) {
 					return BOOL(Data = Ptr);
@@ -165,8 +158,8 @@ protected:
 public:
 	BufferedFile(): Pos(0), DeleteName(NULL) {}
 
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		return File::Create(DeleteName = FileName, Flag);
+	BOOL Create(CONST LPCTSTR FileName) {
+		return File::Create(DeleteName = FileName);
 	}
 	BOOL Save() {
 		if (Pos && !File::Write(Buffer, Pos)) {
@@ -190,7 +183,7 @@ public:
 			}
 			else {
 				Pos = 0;
-				if (!File::Write(Buffer, Size)) {
+				if (!File::Write(Data, Size)) {
 					Delete(DeleteName);
 					return FALSE;
 				}
@@ -216,7 +209,7 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-class LzmaFile : public MappedFile { // saving is still slow
+class LzmaFile : public MappedFile { // saving is still slow and uses a lot of memory
 	LPBYTE Buf;
 
 public:
@@ -228,17 +221,17 @@ public:
 	BOOL Create(CONST DWORD Size, DWORD Header) {
 		return (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Buf) + Header): FALSE;
 	}
-	VOID EndHeader() {
+	VOID Compress() {
 		Data = End;
 	}
-	BOOL Compress(CONST LPCTSTR FileName, CONST DWORD Flag, CONST LPVOID Callback) {
+	BOOL Save(CONST LPCTSTR FileName, CONST LPVOID Callback) {
 		DWORD Size = Data - End;
 		Data = End - Size - 8;
 		WriteDword(Size);
 		WriteDword(0);
 		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
-			if (File::Create(FileName, Flag)) {
+			if (File::Create(FileName)) {
 				if (File::Write(Buf, Data + Size - Buf)) {
 					return TRUE;
 				}
@@ -255,7 +248,6 @@ public:
 				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
 					if (Buf = new(std::nothrow) BYTE[Size]) {
 						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
-							Unmap(); // free the file mapping already
 							return BOOL(End = (Data = Buf) + Size);
 						}
 					}
@@ -276,8 +268,8 @@ public:
 		inflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
-		if (MappedFile::Open(FileName, Flag)) {
+	BOOL Open(CONST LPCTSTR FileName) {
+		if (MappedFile::Open(FileName)) {
 			next_in = Data;
 			avail_in = End - Data;
 			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
@@ -310,10 +302,10 @@ public:
 		deflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName, CONST DWORD Flag) {
+	BOOL Create(CONST LPCTSTR FileName) {
 		next_out = Buffer;
 		avail_out = sizeof(Buffer);
-		return deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK && BufferedFile::Create(FileName, Flag);
+		return deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK && BufferedFile::Create(FileName);
 	}
 	BOOL Save() {
 		while (deflate(this, Z_FINISH) != Z_STREAM_END) {

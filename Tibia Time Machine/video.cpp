@@ -134,7 +134,7 @@ namespace Video {
 
 	UINT Save() {
 		BufferedFile File;
-		if (!File.Create(FileName, CREATE_ALWAYS)) {
+		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(Tibia::Version)) {
@@ -304,7 +304,7 @@ namespace Video {
 
 	UINT Open(BOOL Override, CONST HWND Parent) {
 		MappedFile File;
-		if (!File.Open(FileName, OPEN_EXISTING)) {
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -555,7 +555,7 @@ namespace Video {
 		else {
 			File.WriteDword(0);
 		}
-		File.EndHeader();
+		File.Compress();
 		File.WriteByte(RECVersion()); // Ignored by all players
 		File.WriteByte(2); // It mimics an encrypted REC file, but without encryption
 		File.WriteDword(Packets);
@@ -568,7 +568,7 @@ namespace Video {
 			File.WriteDword(crc32(0, Packet->Data, Packet->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!File.Compress(FileName, CREATE_ALWAYS, CAMProgressCallback)) {
+		if (!File.Save(FileName, CAMProgressCallback)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
@@ -576,7 +576,7 @@ namespace Video {
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
 		LzmaFile File;
-		if (!File.Open(FileName, OPEN_EXISTING)) {
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		LPBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
@@ -664,7 +664,7 @@ namespace Video {
 
 	UINT SaveTMV() {
 		GzwFile File;
-		if (!File.Open(FileName, CREATE_ALWAYS)) {
+		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
@@ -726,7 +726,7 @@ namespace Video {
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
 		GzrFile File;
-		if (!File.Open(FileName, OPEN_EXISTING)) {
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
@@ -801,7 +801,7 @@ namespace Video {
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		MappedFile File;
-		if (!File.Create(FileName, CREATE_ALWAYS, Size)) {
+		if (!File.Create(FileName, Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.WriteByte(RECVersion()); // this version control is what made me create ttm
@@ -841,7 +841,7 @@ namespace Video {
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
 		MappedFile File;
-		if (!File.Open(FileName, OPEN_EXISTING)) {
+		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
@@ -912,12 +912,12 @@ namespace Video {
 					Data[i] -= Key - Rem;
 				}
 				if (RecVersion > 4 && Size) {
-					DWORD AesSize = Size;
-					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &AesSize) || !AesSize) {
+					Checksum = Size;
+					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Checksum) || !Checksum) {
 						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Size = WORD(AesSize);
+					Size = WORD(Checksum);
 				}
 				if (!Src.Read(Data, Size)) {
 					CancelOpen(Override);

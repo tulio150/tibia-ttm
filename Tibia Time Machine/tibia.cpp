@@ -271,7 +271,7 @@ namespace Tibia {
 		static CONST TCHAR Datafiles[3][10] = { _T("Tibia.dat"), _T("Tibia.spr"), _T("Tibia.pic") };
 		GetFullPathName(Datafiles[Index], MAX_PATH, Path, NULL);
 		File Datafile;
-		return Datafile.Open(Path, OPEN_EXISTING) && Datafile.ReadDword(Signatures[Index]);
+		return Datafile.Open(Path) && Datafile.ReadDword(Signatures[Index]);
 	}
 
 	UINT CheckClientPath(CONST LPCTSTR Path) { //TODO: check version if global client
@@ -408,8 +408,7 @@ namespace Tibia {
 	BOOL ChangeConfigHost(CONST LPTSTR Path) {
 		GetFullPathName(_T("Tibia.cfg"), MAX_PATH, Path, NULL);
 		File Configfile;
-		if (Configfile.Create(Path, OPEN_ALWAYS)) {
-			Configfile.Append();
+		if (Configfile.Append(Path)) {
 			CONST CHAR ServerString[45] = {
 				'\r', '\n', 'S', 'e', 'r', 'v', 'e', 'r', 'A', 'd', 'd', 'r', 'e', 's', 's',
 				'=', '\"', '1', '2', '7', '.', '0', '.', '0', '.', '1', '\"',
