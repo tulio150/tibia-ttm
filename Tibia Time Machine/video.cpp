@@ -539,6 +539,7 @@ namespace Video {
 		}
 		LzmaFile File;
 		if (!File.Create(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
