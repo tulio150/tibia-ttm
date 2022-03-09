@@ -30,18 +30,18 @@ public:
 		LARGE_INTEGER Position = { Size, 0 };
 		return SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT);
 	}
-	BOOL Read(CONST LPVOID Data, CONST DWORD Size) CONST {
+	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
 		DWORD Read;
-		return ReadFile(Handle, Data, Size, &Read, NULL) && Read == Size;
+		return ReadFile(Handle, Dest, Size, &Read, NULL) && Read == Size;
 	}
-	BOOL ReadByte(BYTE &Data) CONST {
-		return Read(&Data, 1);
+	BOOL ReadByte(BYTE &Dest) CONST {
+		return Read(&Dest, 1);
 	}
-	BOOL ReadWord(WORD &Data) CONST {
-		return Read(&Data, 2);
+	BOOL ReadWord(WORD &Dest) CONST {
+		return Read(&Dest, 2);
 	}
-	BOOL ReadDword(DWORD &Data) CONST {
-		return Read(&Data, 4);
+	BOOL ReadDword(DWORD &Dest) CONST {
+		return Read(&Dest, 4);
 	}
 
 	BOOL Create(CONST LPCTSTR FileName) {
@@ -54,18 +54,18 @@ public:
 		}
 		return FALSE;
 	}
-	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) CONST {
+	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
 		DWORD Written;
-		return WriteFile(Handle, Data, Size, &Written, NULL) && Written == Size;
+		return WriteFile(Handle, Src, Size, &Written, NULL) && Written == Size;
 	}
-	BOOL WriteByte(CONST BYTE Data) CONST {
-		return Write(&Data, 1);
+	BOOL WriteByte(CONST BYTE Src) CONST {
+		return Write(&Src, 1);
 	}
-	BOOL WriteWord(CONST WORD Data) CONST {
-		return Write(&Data, 2);
+	BOOL WriteWord(CONST WORD Src) CONST {
+		return Write(&Src, 2);
 	}
-	BOOL WriteDword(CONST DWORD Data) CONST {
-		return Write(&Data, 4);
+	BOOL WriteDword(CONST DWORD Src) CONST {
+		return Write(&Src, 4);
 	}
 };
 
@@ -168,9 +168,9 @@ public:
 		}
 		return TRUE;
 	}
-	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
+	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
 		if (Size <= (sizeof(Buffer) - Pos)) {
-			CopyMemory(Buffer + Pos, Data, Size);
+			CopyMemory(Buffer + Pos, Src, Size);
 			Pos += Size;
 		}
 		else {
@@ -179,26 +179,26 @@ public:
 				return FALSE;
 			}
 			if (Size < sizeof(Buffer)) {
-				CopyMemory(Buffer, Data, Pos = Size);
+				CopyMemory(Buffer, Src, Pos = Size);
 			}
 			else {
-				Pos = 0;
-				if (!File::Write(Data, Size)) {
+				if (!File::Write(Src, Size)) {
 					Delete(DeleteName);
 					return FALSE;
 				}
+				Pos = 0;
 			}
 		}
 		return TRUE;
 	}
-	BOOL WriteByte(CONST BYTE Data) {
-		return Write(&Data, 1);
+	BOOL WriteByte(CONST BYTE Src) {
+		return Write(&Src, 1);
 	}
-	BOOL WriteWord(CONST WORD Data) {
-		return Write(&Data, 2);
+	BOOL WriteWord(CONST WORD Src) {
+		return Write(&Src, 2);
 	}
-	BOOL WriteDword(CONST DWORD Data) {
-		return Write(&Data, 4);
+	BOOL WriteDword(CONST DWORD Src) {
+		return Write(&Src, 4);
 	}
 };
 
@@ -232,7 +232,7 @@ public:
 		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
 			if (File::Create(FileName)) {
-				if (File::Write(Buf, Data + Size - Buf)) {
+				if (File::Write(Buf, Data - Buf + Size)) {
 					return TRUE;
 				}
 				Delete(FileName);
@@ -320,8 +320,8 @@ public:
 		}
 		return TRUE;
 	}
-	BOOL Write(CONST LPCVOID Data, CONST DWORD Size) {
-		next_in = LPBYTE(Data);
+	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
+		next_in = LPBYTE(Src);
 		avail_in = Size;
 		do {
 			if (deflate(this, Z_NO_FLUSH) != Z_OK || (!avail_out && !File::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
@@ -331,13 +331,13 @@ public:
 		} while (avail_in);
 		return TRUE;
 	}
-	BOOL WriteByte(CONST BYTE Data) {
-		return Write(&Data, 1);
+	BOOL WriteByte(CONST BYTE Src) {
+		return Write(&Src, 1);
 	}
-	BOOL WriteWord(CONST WORD Data) {
-		return Write(&Data, 2);
+	BOOL WriteWord(CONST WORD Src) {
+		return Write(&Src, 2);
 	}
-	BOOL WriteDword(CONST DWORD Data) {
-		return Write(&Data, 4);
+	BOOL WriteDword(CONST DWORD Src) {
+		return Write(&Src, 4);
 	}
 };
