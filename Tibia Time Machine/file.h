@@ -77,6 +77,15 @@ protected:
 	LPBYTE Data;
 	LPBYTE End;
 
+	VOID Unmap() {
+		UnmapViewOfFile(Ptr);
+		Ptr = NULL;
+		CloseHandle(Map);
+		Map = NULL;
+		CloseHandle(Handle);
+		Handle = INVALID_HANDLE_VALUE;
+	}
+
 public:
 	MappedFile(): Map(NULL), Ptr(NULL) {}
 	~MappedFile() {
@@ -139,13 +148,13 @@ public:
 		Data += Size;
 	}
 	VOID WriteByte(CONST BYTE Src) {
-		*Data++ = Src;
+		return Write(&Src, 1);
 	}
 	VOID WriteWord(CONST WORD Src) {
-		*(*(LPWORD*)&Data)++ = Src;
+		return Write(&Src, 2);
 	}
 	VOID WriteDword(CONST DWORD Src) {
-		*(*(LPDWORD*)&Data)++ = Src;
+		return Write(&Src, 4);
 	}
 };
 
@@ -219,7 +228,7 @@ public:
 	}
 
 	BOOL Create(CONST DWORD Size, DWORD Header) {
-		return (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Buf) + Header): FALSE;
+		return (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Buf) + Header) : FALSE;
 	}
 	VOID Compress() {
 		Data = End;
@@ -248,6 +257,7 @@ public:
 				if (ReadDword(Size) && Size && ReadDword(Large) && !Large) {
 					if (Buf = new(std::nothrow) BYTE[Size]) {
 						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+							Unmap(); // compressed file not needed anymore, free some memory
 							return BOOL(End = (Data = Buf) + Size);
 						}
 					}
