@@ -137,21 +137,21 @@ namespace Video {
 		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteWord(Tibia::Version)) {
+		if (!File.Write(Tibia::Version)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteByte(Tibia::HostLen)) {
+		if (!File.Write(Tibia::HostLen)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (Tibia::HostLen) {
 			if (!File.Write(Tibia::Host, Tibia::HostLen)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if (!File.WriteWord(Tibia::Port)) {
+			if (!File.Write(Tibia::Port)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 		}
-		if (!File.WriteDword(Last->Time)) {
+		if (!File.Write(Last->Time)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
@@ -162,15 +162,15 @@ namespace Video {
 		MainWnd::Progress_Set(0, Last->Time);
 		while (Current->Next) {
 			if (Current->IsLast()) {
-				if (!File.WriteByte(TRUE)) {
+				if (!File.Write(BYTE(TRUE))) {
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
 			else {
-				if (!File.WriteByte(FALSE)) {
+				if (!File.Write(BYTE(FALSE))) {
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
-				if (!File.WriteWord(WORD(Current->Next->Time - Current->Time))) {
+				if (!File.Write(WORD(Current->Next->Time - Current->Time))) {
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
@@ -282,7 +282,7 @@ namespace Video {
 
 	struct FilePacket : private NeedParser, PacketBase {
 		BOOL Read(MappedFile &File) {
-			Set(File.Skip(2));
+			Set(LPBYTE(File.Skip(2)));
 			if (!P || !P->Size || !File.Skip(P->Size)) {
 				return FALSE;
 			}
@@ -308,11 +308,11 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
-		if (!File.ReadWord(Version)) {
+		if (!File.Read(Version)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE HostLen;
-		if (!File.ReadByte(HostLen) || HostLen > 127) {
+		if (!File.Read(HostLen) || HostLen > 127) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		LPCSTR Host = NULL; WORD Port = PORT;
@@ -321,7 +321,7 @@ namespace Video {
 			if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (!File.ReadWord(Port) || !Port) {
+			if (!File.Read(Port) || !Port) {
 				return ERROR_CORRUPT_VIDEO;
 			}
 		}
@@ -329,7 +329,7 @@ namespace Video {
 			return Error;
 		}
 		DWORD TotalTime;
-		if (!File.ReadDword(TotalTime)) {
+		if (!File.Read(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		FilePacket Src; // parses the packet from the buffer (or mapping)
@@ -361,11 +361,11 @@ namespace Video {
 			CancelOpen(Override);
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		for (BYTE EnterGame; File.ReadByte(EnterGame); Current = Current->Next) {
+		for (BYTE EnterGame; File.Read(EnterGame); Current = Current->Next) {
 			MainWnd::Progress_Set(Current->Time, TotalTime);
 			if (!EnterGame) {
 				WORD Delay;
-				if (!File.ReadWord(Delay) || Delay > TotalTime - Current->Time) {
+				if (!File.Read(Delay) || Delay > TotalTime - Current->Time) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -428,7 +428,7 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		BOOL Read(LPBYTE Data, DWORD Avail) {
+		BOOL Read(LPCBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
 				Data += Want;
@@ -543,30 +543,27 @@ namespace Video {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
-		File.WriteByte((Tibia::Version / 100) % 100);
-		File.WriteByte((Tibia::Version / 10) % 10);
-		File.WriteByte(Tibia::Version % 10);
-		File.WriteByte(0);
+		File.Write(Tibia::Version / 100 % 100 | Tibia::Version / 10 % 10 << 8 | DWORD(Tibia::Version) % 10 << 16);
 		if (Tibia::HostLen) {
-			File.WriteDword(Tibia::HostLen + 3);
-			File.WriteByte(Tibia::HostLen);
+			File.Write(DWORD(Tibia::HostLen) + 3);
+			File.Write(Tibia::HostLen);
 			File.Write(Tibia::Host, Tibia::HostLen);
-			File.WriteWord(Tibia::Port);
+			File.Write(Tibia::Port);
 		}
 		else {
-			File.WriteDword(0);
+			File.Write(DWORD(0));
 		}
 		File.Compress();
-		File.WriteByte(RECVersion()); // Ignored by all players
-		File.WriteByte(2); // It mimics an encrypted REC file, but without encryption
-		File.WriteDword(Packets);
+		File.Write(RECVersion()); // Ignored by all players
+		File.Write(BYTE(2)); // It mimics an encrypted REC file, but without encryption
+		File.Write(Packets);
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			File.WriteWord(Size = Packet->RawSize());
-			File.WriteDword(Current->Time);
+			File.Write(WORD(Size = Packet->RawSize()));
+			File.Write(Current->Time);
 			File.Write(Packet, Size);
-			File.WriteDword(crc32(0, Packet->Data, Packet->Size));
+			File.Write(crc32(0, Packet->Data, Packet->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		if (!File.Save(FileName, CAMProgressCallback)) {
@@ -580,11 +577,11 @@ namespace Video {
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		LPBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
+		LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
 		if (!Hash) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		LPBYTE VersionPart = File.Skip(4);
+		LPCBYTE VersionPart = File.Skip(4);
 		if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
 			return ERROR_CORRUPT_VIDEO;
 		}
@@ -593,7 +590,7 @@ namespace Video {
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
 		DWORD Metadata;
-		if (!File.ReadDword(Metadata)) {
+		if (!File.Read(Metadata)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (Metadata) {
@@ -601,14 +598,14 @@ namespace Video {
 				if (Metadata < 4 || Metadata > 130) {
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!File.ReadByte(HostLen) || HostLen != Metadata - 3) {
+				if (!File.Read(HostLen) || HostLen != Metadata - 3) {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				Host = LPCSTR(File.Skip(HostLen));
 				if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!File.ReadWord(Port) || !Port) {
+				if (!File.Read(Port) || !Port) {
 					return ERROR_CORRUPT_VIDEO;
 				}
 			}
@@ -623,29 +620,29 @@ namespace Video {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion)) { // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+		if (!File.Read(RecVersion)) { // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!File.ReadByte(RecVersion) || RecVersion != 2) { // Fake TibiCAM encryption flag (but not really encrypted)
+		if (!File.Read(RecVersion) || RecVersion != 2) { // Fake TibiCAM encryption flag (but not really encrypted)
 			return ERROR_CORRUPT_VIDEO;
 		}
 		DWORD Packets;
-		if (!File.ReadDword(Packets) || Packets < 58) {
+		if (!File.Read(Packets) || Packets < 58) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		Packets -= 57;
 		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
 		for (DWORD i = 0; i < Packets; i++) {
 			WORD Size;
-			if (!File.ReadWord(Size)) {
+			if (!File.Read(Size)) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			if (!File.ReadDword(Src.Time)) {
+			if (!File.Read(Src.Time)) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
+			LPCBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			if (!Data) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
@@ -668,28 +665,28 @@ namespace Video {
 		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteWord(2)) { // Tibiamovie file version (ignored by original player)
+		if (!File.Write(WORD(2))) { // Tibiamovie file version (ignored by original player)
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteWord(Tibia::Version)) {
+		if (!File.Write(Tibia::Version)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteDword(Last->Time)) {
+		if (!File.Write(Last->Time)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteByte(FALSE)) {
+		if (!File.Write(BYTE(FALSE))) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		if (!File.WriteDword(0)) {
+		if (!File.Write(DWORD(0))) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		NeedParser ToSave;
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
-		DWORD Size;
-		if ((Size = Packet->RawSize()) > 0xFFFF) {
+		WORD Size;
+		if ((Size = Packet->RawSize()) < 2) {
 			Size = NULL;
 		}
-		if (!File.WriteWord(Size)) {
+		if (!File.Write(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.Write(Packet, Size)) {
@@ -697,22 +694,22 @@ namespace Video {
 		}
 		while (Current->Next) {
 			if (Current->IsLast()) {
-				if (!File.WriteByte(TRUE)) { // I'm adding markers to the ends of the sessions
+				if (!File.Write(BYTE(TRUE))) { // I'm adding markers to the ends of the sessions
 					return ERROR_CANNOT_SAVE_VIDEO_FILE;
 				}
 			}
-			if (!File.WriteByte(FALSE)) {
+			if (!File.Write(BYTE(FALSE))) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if (!File.WriteDword(Current->Next->Time - Current->Time)) {
+			if (!File.Write(Current->Next->Time - Current->Time)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 			Packet = Parser->GetPacketData(*(Current = Current->Next));
-			if ((Size = Packet->RawSize()) > 0xFFFF) {
+			if ((Size = Packet->RawSize()) < 2) {
 				Size = NULL;
 			}
-			if (!File.WriteWord(Size)) {
+			if (!File.Write(Size)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.Write(Packet, Size)) {
@@ -731,14 +728,14 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		WORD Version;
-		if (!File.ReadWord(Version) || Version != 2) {
+		if (!File.Read(Version) || Version != 2) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (!File.ReadWord(Version)) {
+		if (!File.Read(Version)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		DWORD TotalTime;
-		if (!File.ReadDword(TotalTime)) {
+		if (!File.Read(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
@@ -746,16 +743,16 @@ namespace Video {
 		}
 		Converter Src;
 		Src.Time = 0;
-		for (BYTE Marker; File.ReadByte(Marker); MainWnd::Progress_Set(Src.Time, TotalTime)) {
+		for (BYTE Marker; File.Read(Marker); MainWnd::Progress_Set(Src.Time, TotalTime)) {
 			if (!Marker) {
 				DWORD Delay;
-				if (!File.ReadDword(Delay) || !Override && Delay > TotalTime - Src.Time) {
+				if (!File.Read(Delay) || !Override && Delay > TotalTime - Src.Time) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				Src.Time += Delay;
 				WORD Size;
-				if (!File.ReadWord(Size)) {
+				if (!File.Read(Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -805,14 +802,14 @@ namespace Video {
 		if (!File.Create(FileName, Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		File.WriteByte(RECVersion()); // this version control is what made me create ttm
-		File.WriteByte(1); // there is no point in saving encrypted rec files anymore, and they are slower
-		File.WriteDword(Packets);
+		File.Write(RECVersion()); // this version control is what made me create ttm
+		File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
+		File.Write(Packets);
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			File.WriteDword(Size = Packet->RawSize());
-			File.WriteDword(Current->Time);
+			File.Write(Size = Packet->RawSize());
+			File.Write(Current->Time);
 			File.Write(Packet, Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
@@ -846,11 +843,11 @@ namespace Video {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
 		BYTE RecVersion;
-		if (!File.ReadByte(RecVersion) || RecVersion < 2) { // we are supporting more versions than tibicam itself
+		if (!File.Read(RecVersion) || RecVersion < 2) { // we are supporting more versions than tibicam itself
 			return ERROR_CORRUPT_VIDEO;
 		}
 		BYTE Encryption;
-		if (!File.ReadByte(Encryption) || !Encryption || Encryption > 2) {
+		if (!File.Read(Encryption) || !Encryption || Encryption > 2) {
 			return ERROR_CORRUPT_VIDEO;
 		}
 		if (!Last && !Tibia::Running) {
@@ -864,7 +861,7 @@ namespace Video {
 		DWORD Packets;
 		Converter Src;
 		if (Encryption == 2) {
-			if (!File.ReadDword(Packets) || Packets < 58) {
+			if (!File.Read(Packets) || Packets < 58) {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			Packets -= 57;
@@ -887,11 +884,11 @@ namespace Video {
 			}
 			for (DWORD i = 0; i < Packets; i++) {
 				WORD Size;
-				if (!File.ReadWord(Size)) {
+				if (!File.Read(Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!File.ReadDword(Src.Time)) {
+				if (!File.Read(Src.Time)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -901,7 +898,7 @@ namespace Video {
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.ReadDword(Checksum) || !Override && Checksum != adler32(1, Data, Size)) {
+				if (!File.Read(Checksum) || !Override && Checksum != adler32(1, Data, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
@@ -928,20 +925,20 @@ namespace Video {
 			}
 		}
 		else {
-			if (!File.ReadDword(Packets) || !Packets) {
+			if (!File.Read(Packets) || !Packets) {
 				return ERROR_CORRUPT_VIDEO;
 			}
 			for (DWORD i = 0; i < Packets; i++) {
 				DWORD Size;
-				if (!File.ReadDword(Size)) {
+				if (!File.Read(Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!File.ReadDword(Src.Time)) {
+				if (!File.Read(Src.Time)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				LPBYTE Data = File.Skip(Size);
+				LPCBYTE Data = File.Skip(Size);
 				if (!Data) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;

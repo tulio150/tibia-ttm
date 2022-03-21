@@ -26,6 +26,7 @@
 #include <new.h>
 
 typedef unsigned __int64 QWORD;
+typedef CONST BYTE FAR* LPCBYTE;
 
 //infinite loop
 #define ever ;;

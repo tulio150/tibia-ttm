@@ -271,7 +271,7 @@ namespace Tibia {
 		static CONST TCHAR Datafiles[3][10] = { _T("Tibia.dat"), _T("Tibia.spr"), _T("Tibia.pic") };
 		GetFullPathName(Datafiles[Index], MAX_PATH, Path, NULL);
 		File Datafile;
-		return Datafile.Open(Path) && Datafile.ReadDword(Signatures[Index]);
+		return Datafile.Open(Path) && Datafile.Read(Signatures[Index]);
 	}
 
 	UINT CheckClientPath(CONST LPCTSTR Path) { //TODO: check version if global client
