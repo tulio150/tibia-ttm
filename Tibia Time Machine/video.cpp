@@ -373,11 +373,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay))) {
-					CancelOpen(Override);
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
-				if (!Parser->FixTrade(*Current->Next)) {
+				if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay)) || !Parser->FixTrade(*Current->Next)) {
 					CancelOpen(Override);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
@@ -392,11 +388,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Record(Current->Next = new(std::nothrow) Session(Current))) {
-					CancelOpen(Override);
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
-				if (!Parser->FixEnterGame(*Current->Next)) {
+				if (!Src.Record(Current->Next = new(std::nothrow) Session(Current)) || !Parser->FixEnterGame(*Current->Next)) {
 					CancelOpen(Override);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
@@ -527,19 +519,16 @@ namespace Video {
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
-				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
 			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
-				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		LzmaFile File;
-		if (!File.Create(Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
-			DeleteFile(FileName);
+		if (!File.Create(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
@@ -682,9 +671,9 @@ namespace Video {
 		}
 		NeedParser ToSave;
 		PacketData* Packet = Parser->GetPacketData(*(Current = First));
-		WORD Size;
-		if ((Size = Packet->RawSize()) < 2) {
-			Size = NULL;
+		WORD Size = Packet->RawSize();
+		if (Size < 2) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		if (!File.Write(Size)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -705,9 +694,8 @@ namespace Video {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
-			Packet = Parser->GetPacketData(*(Current = Current->Next));
-			if ((Size = Packet->RawSize()) < 2) {
-				Size = NULL;
+			if ((Size = (Packet = Parser->GetPacketData(*(Current = Current->Next)))->RawSize()) < 2) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if (!File.Write(Size)) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
@@ -789,11 +777,9 @@ namespace Video {
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 14, Packets = 1;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
-				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFEFFF6) {
-				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -867,7 +853,7 @@ namespace Video {
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				struct AES256KEYBLOB {
+				static const struct AES256KEYBLOB {
 					BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
 					DWORD Size = 32;
 					BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
@@ -892,32 +878,32 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				BYTE Data[0xFFFF];
-				if (!File.Read(Data, Size)) {
+				LPCBYTE Encrypted = File.Skip(Size);
+				if (!Encrypted) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
 				DWORD Checksum;
-				if (!File.Read(Checksum) || !Override && Checksum != adler32(1, Data, Size)) {
+				if (!File.Read(Checksum) || !Override && Checksum != adler32(1, Encrypted, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
+				BYTE Data[0xFFFF];
 				CHAR Key = Size + Src.Time - 31, Rem;
 				for (WORD i = 0; i < Size; i++) {
 					if ((Rem = (Key += 33) % Mod) > 0) {
 						Rem -= Mod;
 					}
-					Data[i] -= Key - Rem;
+					Data[i] = Encrypted[i] - Key + Rem;
 				}
-				if (RecVersion > 4 && Size) {
-					Checksum = Size;
-					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Checksum) || !Checksum) {
+				DWORD Decrypted = Size;
+				if (RecVersion > 4 && Decrypted) {
+					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Decrypted) || !Decrypted) {
 						CancelOpen(Override);
 						return ERROR_CORRUPT_VIDEO;
 					}
-					Size = WORD(Checksum);
 				}
-				if (!Src.Read(Data, Size)) {
+				if (!Src.Read(Data, Decrypted)) {
 					CancelOpen(Override);
 					return Src.Time;
 				}

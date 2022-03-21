@@ -6,6 +6,19 @@ class File { // generic file read/write
 protected:
 	HANDLE Handle;
 
+	DWORD GetSize() CONST {
+		LARGE_INTEGER Size;
+		return GetFileSizeEx(Handle, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
+	}
+	VOID Delete(CONST LPCTSTR FileName) {
+		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
+		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
+			DeleteFile(FileName);
+			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
+			SetEndOfFile(Handle);
+		}
+	}
+
 public:
 	File(): Handle(INVALID_HANDLE_VALUE) {}
 	~File() {
@@ -14,10 +27,6 @@ public:
 
 	BOOL Open(CONST LPCTSTR FileName) {
 		return (Handle = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
-	}
-	DWORD GetSize() CONST {
-		LARGE_INTEGER Size;
-		return GetFileSizeEx(Handle, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
 	}
 	BOOL Skip(CONST DWORD Size) CONST {
 		LARGE_INTEGER Position = { Size, 0 };
@@ -35,7 +44,7 @@ public:
 		return (Handle = CreateFile(FileName, FILE_READ_DATA | FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 	BOOL Append(CONST LPCTSTR FileName) {
-		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, NULL, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
+		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
 			SetFilePointer(Handle, 0, NULL, FILE_END);
 			return TRUE;
 		}
@@ -50,15 +59,6 @@ public:
 	}
 	template <typename TYPE> BOOL Write(CONST TYPE Src) CONST {
 		return Write(&Src, sizeof(TYPE));
-	}
-
-	VOID Delete(CONST LPCTSTR FileName) {
-		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
-		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
-			DeleteFile(FileName);
-			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
-			SetEndOfFile(Handle);
-		}
 	}
 };
 
@@ -117,6 +117,9 @@ protected:
 	LPBYTE Data;
 	LPCBYTE End;
 
+	BOOL Stream(CONST LPBYTE Buf, CONST DWORD Size) {
+		return Buf ? BOOL(End = (Data = Buf) + Size) : FALSE;
+	}
 	VOID Unmap() {
 		UnmapViewOfFile(Ptr);
 		Ptr = NULL;
@@ -133,9 +136,7 @@ public:
 		if (File::Open(FileName)) {
 			if (DWORD Size = GetSize()) {
 				if (Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
-					if (Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)) {
-						return BOOL(End = (Data = LPBYTE(Ptr)) + Size);
-					}
+					return Stream(LPBYTE(Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)), Size);
 				}
 			}
 		}
@@ -158,9 +159,7 @@ public:
 	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size) {
 		if (File::Create(FileName)) {
 			if (Map = CreateFileMapping(Handle, NULL, PAGE_READWRITE, NULL, Size, NULL)) {
-				if (Ptr = MapViewOfFile(Map, FILE_MAP_WRITE, NULL, NULL, Size)) {
-					return BOOL(Data = LPBYTE(Ptr));
-				}
+				return Stream(LPBYTE(Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)), Size);
 			}
 			Delete(FileName);
 		}
@@ -201,14 +200,14 @@ public:
 
 	BOOL Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize;
-		if (Read(OldSize) && (Data + OldSize <= End || (AllowTruncated && (OldSize = End - Data)))) {
+		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated && (OldSize = End - Data))) {
 			if (CONST LPCBYTE Props = Skip(5)) {
 				DWORD Size, Large;
 				if (Read(Size) && Size && Read(Large) && !Large) {
 					if (Buf = new(std::nothrow) BYTE[Size]) {
 						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
 							Unmap(); // compressed file not needed anymore, free some memory
-							return BOOL(End = (Data = Buf) + Size);
+							return Stream(Buf, Size);
 						}
 					}
 				}
@@ -217,30 +216,34 @@ public:
 		return FALSE;
 	}
 
-	BOOL Create(CONST DWORD Size, DWORD Header) {
-		return (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) ? BOOL(End = (Data = Buf) + Header) : FALSE;
+	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, DWORD Header) {
+		return Stream(Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)], Header) && File::Create(FileName);
 	}
 	VOID Compress() {
 		Data = LPBYTE(End);
 	}
 	BOOL Save(CONST LPCTSTR FileName, CONST LPCVOID Callback) {
 		DWORD Size = Data - End;
-		Data = LPBYTE(End) - Size - 8;
-		Write(QWORD(Size));
+		Data = LPBYTE(End) - Size;
+		*(QWORD*)(Data - 8) = Size;
 		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
-			if (File::Create(FileName)) { // not mapped because it's a single write and memory usage is already high
-				if (File::Write(Buf, Data - Buf + Size) && File::Save()) {
-					return TRUE;
-				}
-				Delete(FileName);
+			if (File::Write(Buf, Data - Buf + Size) && File::Save()) { // not mapped because it's a single write
+				return TRUE;
 			}
 		}
+		Delete(FileName);
 		return FALSE;
 	}
 };
 
 class GzrFile : private MappedFile, z_stream { // fastest possible gzip decompression
+	BOOL Stream(CONST LPBYTE Src, CONST DWORD Size) {
+		next_in = Src;
+		avail_in = Size;
+		return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+	}
+
 public:
 	GzrFile() {
 		zalloc = Z_NULL;
@@ -251,12 +254,7 @@ public:
 	}
 
 	BOOL Open(CONST LPCTSTR FileName) {
-		if (!MappedFile::Open(FileName)) {
-			return FALSE;
-		}
-		next_in = Data;
-		avail_in = End - Data;
-		return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+		return MappedFile::Open(FileName) && Stream(Data, End - Data);
 	}
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);
