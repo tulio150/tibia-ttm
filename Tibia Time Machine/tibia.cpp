@@ -420,7 +420,7 @@ namespace Tibia {
 		return FALSE;
 	}
 
-	BOOL RemoteThread(CONST LPVOID Call, CONST LPVOID Param, CONST LPVOID Result) {
+	BOOL RemoteThread(CONST LPCVOID Call, CONST LPVOID Param, CONST LPVOID Result) {
 		if (HANDLE Remote = CreateRemoteThread(Proc.hProcess, NULL, NULL, LPTHREAD_START_ROUTINE(Call), Param, NULL, NULL)) {
 			if (!WaitForSingleObject(Remote, 2000)) {
 				if (GetExitCodeThread(Remote, LPDWORD(Result))) {
@@ -744,7 +744,7 @@ namespace Tibia {
 			else {
 				Click = { 128, -224 };
 			}
-			LPVOID IsProcessDPIAware = GetProcAddress(GetModuleHandle(_T("user32.dll")), "IsProcessDPIAware");
+			LPCVOID IsProcessDPIAware = GetProcAddress(GetModuleHandle(_T("user32.dll")), "IsProcessDPIAware");
 			if (IsProcessDPIAware) { // Function abscense = XP, that means no scaling
 				if (RemoteThread(IsProcessDPIAware, NULL, &IsProcessDPIAware)) { // Function failure = assume no scaling
 					if (!IsProcessDPIAware) { // If Tibia is not DPI-aware, we have to scale mouse position to send a click
