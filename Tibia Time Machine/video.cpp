@@ -291,7 +291,7 @@ namespace Video {
 		}
 		BOOL Record(Packet *&Next) {
 			if (Next) {
-				if (LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
+				if (CONST LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
 					CopyMemory(Data, P->Data, P->Size);
 					return TRUE;
 				}
@@ -325,7 +325,7 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 		}
-		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
+		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
 			return Error;
 		}
 		DWORD TotalTime;
@@ -521,7 +521,7 @@ namespace Video {
 			if (Packets == INFINITE) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
+			CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
 			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
@@ -566,15 +566,15 @@ namespace Video {
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
+		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
 		if (!Hash) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		LPCBYTE VersionPart = File.Skip(4);
+		CONST LPCBYTE VersionPart = File.Skip(4);
 		if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		WORD Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+		CONST WORD Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
 		BYTE HostLen = NULL;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
@@ -602,7 +602,7 @@ namespace Video {
 				return ERROR_CORRUPT_VIDEO;
 			}
 		}
-		if (UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
+		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
 			return Error;
 		}
 		if (!File.Uncompress(Override)) {
@@ -631,7 +631,7 @@ namespace Video {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
 			}
-			LPCBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
+			CONST LPCBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			if (!Data) {
 				CancelOpen(Override);
 				return ERROR_CORRUPT_VIDEO;
@@ -726,7 +726,7 @@ namespace Video {
 		if (!File.Read(TotalTime)) {
 			return ERROR_CORRUPT_VIDEO;
 		}
-		if (UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
+		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
 			return Error;
 		}
 		Converter Src;
@@ -858,11 +858,11 @@ namespace Video {
 					DWORD Size = 32;
 					BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
 				} AesBlob;
-				if (!CryptImportKey(WinCrypt, LPBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
+				if (!CryptImportKey(WinCrypt, LPCBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
-				DWORD AesMode = CRYPT_MODE_ECB;
-				if (!CryptSetKeyParam(RecKey, KP_MODE, LPBYTE(&AesMode), NULL)) {
+				CONST DWORD AesMode = CRYPT_MODE_ECB;
+				if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
 					CryptDestroyKey(RecKey);
 					RecKey = NULL;
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
@@ -878,7 +878,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				LPCBYTE Encrypted = File.Skip(Size);
+				CONST LPCBYTE Encrypted = File.Skip(Size);
 				if (!Encrypted) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
@@ -924,7 +924,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				LPCBYTE Data = File.Skip(Size);
+				CONST LPCBYTE Data = File.Skip(Size);
 				if (!Data) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
