@@ -109,34 +109,33 @@ public:
 	}
 };
 
-class MappedFile : protected File { // uses memory mapping to speed up read/write, fails on big files
-	HANDLE Map;
+class MappedFile : protected File { // uses memory mapping to speed up reads, fails on very big files
 	LPCVOID Ptr;
 
 protected:
-	LPBYTE Data;
+	LPCBYTE Data;
 	LPCBYTE End;
 
-	BOOL Stream(CONST LPBYTE Buf, CONST DWORD Size) {
-		return Buf ? BOOL(End = (Data = Buf) + Size) : FALSE;
-	}
 	VOID Unmap() {
 		UnmapViewOfFile(Ptr);
 		Ptr = NULL;
 	}
 
 public:
-	MappedFile(): Map(NULL), Ptr(NULL) {}
+	MappedFile(): Ptr(NULL) {}
 	~MappedFile() {
 		UnmapViewOfFile(Ptr);
-		CloseHandle(Map);
 	}
 
 	BOOL Open(CONST LPCTSTR FileName) {
 		if (File::Open(FileName)) {
 			if (DWORD Size = GetSize()) {
-				if (Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
-					return Stream(LPBYTE(Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)), Size);
+				if (HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
+					if (Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)) {
+						CloseHandle(Map);
+						return BOOL(End = (Data = LPCBYTE(Ptr)) + Size);
+					}
+					CloseHandle(Map);
 				}
 			}
 		}
@@ -155,31 +154,6 @@ public:
 	template <typename TYPE> BOOL Read(TYPE& Dest) {
 		return Read(&Dest, sizeof(TYPE));
 	}
-
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size) {
-		if (File::Create(FileName)) {
-			if (Map = CreateFileMapping(Handle, NULL, PAGE_READWRITE, NULL, Size, NULL)) {
-				return Stream(LPBYTE(Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)), Size);
-			}
-			Delete(FileName);
-		}
-		return FALSE;
-	}
-	BOOL Save(CONST LPCTSTR FileName) {
-		if (FlushViewOfFile(Ptr, Data - LPBYTE(Ptr)) && File::Save()) {
-			return TRUE;
-		}
-		Unmap();
-		Delete(FileName);
-		return FALSE;
-	}
-	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
-		CopyMemory(Data, Src, Size);
-		Data += Size;
-	}
-	template <typename TYPE> VOID Write(CONST TYPE Src) {
-		*(*(TYPE**)&Data)++ = Src;
-	}
 };
 
 #define SZ_ERROR_DATA 1
@@ -189,12 +163,12 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-class LzmaFile : public MappedFile { // saving is slow and uses a lot of memory
+class LzmarFile : public MappedFile { // fastest possible single-pass lzma decompression
 	LPBYTE Buf;
 
 public:
-	LzmaFile() : Buf(NULL) {}
-	~LzmaFile() {
+	LzmarFile() : Buf(NULL) {}
+	~LzmarFile() {
 		delete[] Buf;
 	}
 
@@ -207,7 +181,7 @@ public:
 					if (Buf = new(std::nothrow) BYTE[Size]) {
 						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
 							Unmap(); // compressed file not needed anymore, free some memory
-							return Stream(Buf, Size);
+							return BOOL(End = (Data = Buf) + Size);
 						}
 					}
 				}
@@ -215,18 +189,34 @@ public:
 		}
 		return FALSE;
 	}
+};
+
+class LzmawFile : public File { // slow, uses a lot of memory, and needs the size pre-calculated
+	LPBYTE Data;
+	LPBYTE Temp;
+	LPBYTE Buf;
+
+public:
+	LzmawFile() : Buf(NULL) {}
+	~LzmawFile() {
+		delete[] Buf;
+	}
 
 	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, DWORD Header) {
-		return Stream(Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)], Header) && File::Create(FileName);
+		if (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) {
+			Temp = (Data = Buf) + Header;
+			return File::Create(FileName);
+		}
+		return FALSE;
 	}
 	VOID Compress() {
-		Data = LPBYTE(End);
+		Data = Temp;
 	}
 	BOOL Save(CONST LPCTSTR FileName, CONST LPCVOID Callback) {
-		DWORD Size = Data - End;
-		Data = LPBYTE(End) - Size;
+		DWORD Size = Data - Temp;
+		Data = Temp - Size;
 		*(QWORD*)(Data - 8) = Size;
-		if (!LzmaCompress(Data, &Size, End, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
+		if (!LzmaCompress(Data, &Size, Temp, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
 			if (File::Write(Buf, Data - Buf + Size) && File::Save()) { // not mapped because it's a single write
 				return TRUE;
@@ -235,15 +225,16 @@ public:
 		Delete(FileName);
 		return FALSE;
 	}
+	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
+		CopyMemory(Data, Src, Size);
+		Data += Size;
+	}
+	template <typename TYPE> VOID Write(CONST TYPE Src) {
+		*(*(TYPE**)&Data)++ = Src;
+	}
 };
 
 class GzrFile : private MappedFile, z_stream { // fastest possible gzip decompression
-	BOOL Stream(CONST LPBYTE Src, CONST DWORD Size) {
-		next_in = Src;
-		avail_in = Size;
-		return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
-	}
-
 public:
 	GzrFile() {
 		zalloc = Z_NULL;
@@ -254,7 +245,12 @@ public:
 	}
 
 	BOOL Open(CONST LPCTSTR FileName) {
-		return MappedFile::Open(FileName) && Stream(Data, End - Data);
+		if (MappedFile::Open(FileName)) {
+			next_in = LPBYTE(Data);
+			avail_in = End - Data;
+			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+		}
+		return FALSE;
 	}
 	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);

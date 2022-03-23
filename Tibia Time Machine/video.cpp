@@ -519,15 +519,17 @@ namespace Video {
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
 			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		LzmaFile File;
+		LzmawFile File;
 		if (!File.Create(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -562,7 +564,7 @@ namespace Video {
 		return NULL;
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmaFile File;
+		LzmarFile File;
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -773,33 +775,43 @@ namespace Video {
 	}
 
 	UINT SaveREC() {
-		NeedParser ToSave;
-		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 14, Packets = 1;
+		DWORD Packets = 1;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) {
+				DeleteFile(FileName);
 				return ERROR_CANNOT_SAVE_VIDEO_FILE;
 			}
-			if ((Size += Parser->GetPacketData(*Current)->RawSize() + 8) > 0xFFFEFFF6) {
-				return ERROR_CANNOT_SAVE_VIDEO_FILE;
-			}
-			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		MappedFile File;
-		if (!File.Create(FileName, Size)) {
+		BufferedFile File;
+		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
-		File.Write(RECVersion()); // this version control is what made me create ttm
-		File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
-		File.Write(Packets);
+		if (!File.Write(RECVersion())) { // this version control is what made me create ttm
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.Write(BYTE(1))) { // there is no point in saving encrypted rec files anymore, and they are slower
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		if (!File.Write(Packets)) {
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		NeedParser ToSave;
 		Current = First;
 		do {
 			PacketData* Packet = Parser->GetPacketData(*Current);
-			File.Write(Size = Packet->RawSize());
-			File.Write(Current->Time);
-			File.Write(Packet, Size);
+			DWORD Size = Packet->RawSize();
+			if (!File.Write(Size)) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (!File.Write(Current->Time)) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
+			if (!File.Write(Packet, Size)) {
+				return ERROR_CANNOT_SAVE_VIDEO_FILE;
+			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
-		if (!File.Save(FileName)) {
+		if (!File.Save()) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		Changed = FALSE;
