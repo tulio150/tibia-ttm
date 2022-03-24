@@ -174,12 +174,12 @@ public:
 
 	BOOL Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize;
-		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated && (OldSize = End - Data))) {
+		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) {
 			if (CONST LPCBYTE Props = Skip(5)) {
 				DWORD Size, Large;
 				if (Read(Size) && Size && Read(Large) && !Large) {
 					if (Buf = new(std::nothrow) BYTE[Size]) {
-						if (LzmaUncompress(Buf, &Size, Data, &(OldSize -= 13), Props, 5) != SZ_ERROR_DATA) {
+						if (LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5) != SZ_ERROR_DATA) {
 							Unmap(); // compressed file not needed anymore, free some memory
 							return BOOL(End = (Data = Buf) + Size);
 						}
@@ -192,9 +192,9 @@ public:
 };
 
 class LzmawFile : public File { // slow, uses a lot of memory, and needs the size pre-calculated
-	LPBYTE Data;
-	LPBYTE Temp;
 	LPBYTE Buf;
+	LPBYTE Temp;
+	LPBYTE Data;
 
 public:
 	LzmawFile() : Buf(NULL) {}
@@ -217,7 +217,7 @@ public:
 		Data = Temp - Size;
 		*(QWORD*)(Data - 8) = Size;
 		if (!LzmaCompress(Data, &Size, Temp, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
-			*(DWORD*)(Data - 17) = Size + 13;
+			*(DWORD*)(Data - 17) = Size + 13; // adding the header size is not consistent among recorders
 			if (File::Write(Buf, Data - Buf + Size) && File::Save()) { // not mapped because it's a single write
 				return TRUE;
 			}
