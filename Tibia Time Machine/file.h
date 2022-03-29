@@ -2,7 +2,7 @@
 #include "framework.h"
 #include "zlib.h"
 
-class File { // generic file read/write
+class File {
 protected:
 	HANDLE Handle;
 
@@ -41,10 +41,10 @@ public:
 	}
 
 	BOOL Create(CONST LPCTSTR FileName) {
-		return (Handle = CreateFile(FileName, FILE_READ_DATA | FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+		return (Handle = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
 	}
 	BOOL Append(CONST LPCTSTR FileName) {
-		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
+		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
 			SetFilePointer(Handle, 0, NULL, FILE_END);
 			return TRUE;
 		}
@@ -62,7 +62,7 @@ public:
 	}
 };
 
-class BufferedFile : protected File { // uses a stack buffer to speed up writes, does not need file size in advance
+class BufferedFile : protected File {
 protected:
 	LPCTSTR DeleteName;
 	DWORD Pos;
@@ -75,41 +75,38 @@ public:
 		return File::Create(DeleteName = FileName);
 	}
 	BOOL Save() {
-		if (Pos && !File::Write(Buffer, Pos) || !File::Save()) {
-			Delete(DeleteName);
-			return FALSE;
+		if ((!Pos || File::Write(Buffer, Pos)) && File::Save()) {
+			Pos = 0;
+			return TRUE;
 		}
-		return TRUE;
+		Delete(DeleteName);
+		return FALSE;
 	}
 	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
 		if (Size <= (sizeof(Buffer) - Pos)) {
 			CopyMemory(Buffer + Pos, Src, Size);
 			Pos += Size;
+			return TRUE;
 		}
-		else {
-			if (Pos && !File::Write(Buffer, Pos)) {
-				Delete(DeleteName);
-				return FALSE;
-			}
+		if (!Pos || File::Write(Buffer, Pos)) {
 			if (Size < sizeof(Buffer)) {
 				CopyMemory(Buffer, Src, Pos = Size);
+				return TRUE;
 			}
-			else {
-				if (!File::Write(Src, Size)) {
-					Delete(DeleteName);
-					return FALSE;
-				}
+			if (File::Write(Src, Size)) {
 				Pos = 0;
+				return TRUE;
 			}
 		}
-		return TRUE;
+		Delete(DeleteName);
+		return FALSE;
 	}
 	template <typename TYPE> BOOL Write(CONST TYPE Src) {
 		return Write(&Src, sizeof(TYPE));
 	}
 };
 
-class MappedFile : protected File { // uses memory mapping to speed up reads, fails on very big files
+class MappedFile : private File {
 	LPCVOID Ptr;
 
 protected:
@@ -163,42 +160,14 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-class LzmarFile : public MappedFile { // fastest possible single-pass lzma decompression
-	LPBYTE Buf;
-
-public:
-	LzmarFile() : Buf(NULL) {}
-	~LzmarFile() {
-		delete[] Buf;
-	}
-
-	BOOL Uncompress(CONST BOOL AllowTruncated) {
-		DWORD OldSize;
-		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) {
-			if (CONST LPCBYTE Props = Skip(5)) {
-				DWORD Size, Large;
-				if (Read(Size) && Size && Read(Large) && !Large) {
-					if (Buf = new(std::nothrow) BYTE[Size]) {
-						if (LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5) != SZ_ERROR_DATA) {
-							Unmap(); // compressed file not needed anymore, free some memory
-							return BOOL(End = (Data = Buf) + Size);
-						}
-					}
-				}
-			}
-		}
-		return FALSE;
-	}
-};
-
-class LzmawFile : public File { // slow, uses a lot of memory, and needs the size pre-calculated
+class LzmaBufferedFile : private File {
 	LPBYTE Buf;
 	LPBYTE Temp;
 	LPBYTE Data;
 
 public:
-	LzmawFile() : Buf(NULL) {}
-	~LzmawFile() {
+	LzmaBufferedFile() : Buf(NULL) {}
+	~LzmaBufferedFile() {
 		delete[] Buf;
 	}
 
@@ -217,8 +186,8 @@ public:
 		Data = Temp - Size;
 		*(QWORD*)(Data - 8) = Size;
 		if (!LzmaCompress(Data, &Size, Temp, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
-			*(DWORD*)(Data - 17) = Size + 13; // adding the header size is not consistent among recorders
-			if (File::Write(Buf, Data - Buf + Size) && File::Save()) { // not mapped because it's a single write
+			*(DWORD*)(Data - 17) = Size + 13;
+			if (File::Write(Buf, Data - Buf + Size) && File::Save()) {
 				return TRUE;
 			}
 		}
@@ -230,45 +199,45 @@ public:
 		Data += Size;
 	}
 	template <typename TYPE> VOID Write(CONST TYPE Src) {
-		*(*(TYPE**)&Data)++ = Src;
+		*(*(TYPE**)&Data)++ = Src; // return Write(&Src, sizeof(TYPE));
 	}
 };
 
-class GzrFile : private MappedFile, z_stream { // fastest possible gzip decompression
+class LzmaMappedFile : public MappedFile {
+	LPBYTE Buf;
+
 public:
-	GzrFile() {
-		zalloc = Z_NULL;
-		zfree = Z_NULL;
-	}
-	~GzrFile() {
-		inflateEnd(this);
+	LzmaMappedFile() : Buf(NULL) {}
+	~LzmaMappedFile() {
+		delete[] Buf;
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
-		if (MappedFile::Open(FileName)) {
-			next_in = LPBYTE(Data);
-			avail_in = End - Data;
-			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+	BOOL Uncompress(CONST BOOL AllowTruncated) {
+		DWORD OldSize;
+		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) { // very permissive about wrong sizes
+			if (CONST LPCBYTE Props = Skip(5)) {
+				DWORD Size, Large;
+				if (Read(Size) && Size && Read(Large) && !Large) {
+					if (Buf = new(std::nothrow) BYTE[Size]) {
+						if (LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5) != SZ_ERROR_DATA) {
+							Unmap();
+							return BOOL(End = (Data = Buf) + Size);
+						}
+					}
+				}
+			}
 		}
 		return FALSE;
 	}
-	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
-		next_out = LPBYTE(Dest);
-		avail_out = Size;
-		return inflate(this, Z_SYNC_FLUSH) >= Z_OK && !avail_out;
-	}
-	template <typename TYPE> BOOL Read(TYPE& Dest) {
-		return Read(&Dest, sizeof(TYPE));
-	}
 };
 
-class GzwFile : private BufferedFile, z_stream { // fastest possible gzip compression without pre-calculated size
+class GzipBufferedFile : private BufferedFile, z_stream {
 public:
-	GzwFile() {
+	GzipBufferedFile() {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
 	}
-	~GzwFile() {
+	~GzipBufferedFile() {
 		deflateEnd(this);
 	}
 
@@ -303,5 +272,33 @@ public:
 	}
 	template <typename TYPE> BOOL Write(CONST TYPE Src) {
 		return Write(&Src, sizeof(TYPE));
+	}
+};
+
+class GzipMappedFile : private MappedFile, z_stream {
+public:
+	GzipMappedFile() {
+		zalloc = Z_NULL;
+		zfree = Z_NULL;
+	}
+	~GzipMappedFile() {
+		inflateEnd(this);
+	}
+
+	BOOL Open(CONST LPCTSTR FileName) {
+		if (MappedFile::Open(FileName)) {
+			next_in = LPBYTE(Data);
+			avail_in = End - Data;
+			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
+		}
+		return FALSE;
+	}
+	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
+		next_out = LPBYTE(Dest);
+		avail_out = Size;
+		return inflate(this, Z_SYNC_FLUSH) >= Z_OK && !avail_out;
+	}
+	template <typename TYPE> BOOL Read(TYPE& Dest) {
+		return Read(&Dest, sizeof(TYPE));
 	}
 };

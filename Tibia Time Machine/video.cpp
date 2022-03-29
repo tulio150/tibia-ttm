@@ -28,6 +28,11 @@ namespace Video {
 	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512") };
 
 	HCRYPTKEY RecKey = NULL;
+	static const struct AES256KEYBLOB {
+		BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
+		DWORD Size = 32;
+		BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
+	} RecBlob;
 
 #define CurrentLogin ((Session *) Current)
 
@@ -281,13 +286,13 @@ namespace Video {
 	}
 
 	struct FilePacket : private NeedParser, PacketBase {
-		BOOL Read(MappedFile &File) {
+		BOOL Read(MappedFile& File) {
 			Set(LPBYTE(File.Skip(2)));
-			if (!P || !P->Size || !File.Skip(P->Size)) {
-				return FALSE;
+			if (P && P->Size && File.Skip(P->Size)) {
+				Parser->SetPacket(*this);
+				return Parser->GetPacketType();
 			}
-			Parser->SetPacket(*this);
-			return Parser->GetPacketType();
+			return FALSE;
 		}
 		BOOL Record(Packet *&Next) {
 			if (Next) {
@@ -529,7 +534,7 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		LzmawFile File;
+		LzmaBufferedFile File;
 		if (!File.Create(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -564,7 +569,7 @@ namespace Video {
 		return NULL;
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmarFile File;
+		LzmaMappedFile File;
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -652,7 +657,7 @@ namespace Video {
 	}
 
 	UINT SaveTMV() {
-		GzwFile File;
+		GzipBufferedFile File;
 		if (!File.Create(FileName)) {
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -713,7 +718,7 @@ namespace Video {
 		return NULL;
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
-		GzrFile File;
+		GzipMappedFile File;
 		if (!File.Open(FileName)) {
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
@@ -865,12 +870,7 @@ namespace Video {
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				static const struct AES256KEYBLOB {
-					BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
-					DWORD Size = 32;
-					BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
-				} AesBlob;
-				if (!CryptImportKey(WinCrypt, LPCBYTE(&AesBlob), sizeof(AesBlob), NULL, NULL, &RecKey)) {
+				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) {
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 				CONST DWORD AesMode = CRYPT_MODE_ECB;
@@ -895,12 +895,12 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
+				BYTE Data[0xFFFF];
 				DWORD Checksum;
 				if (!File.Read(Checksum) || !Override && Checksum != adler32(1, Encrypted, Size)) {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				BYTE Data[0xFFFF];
 				CHAR Key = Size + Src.Time - 31, Rem;
 				for (WORD i = 0; i < Size; i++) {
 					if ((Rem = (Key += 33) % Mod) > 0) {
