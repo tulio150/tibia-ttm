@@ -107,70 +107,32 @@ namespace Video {
 		}
 	}
 
-	VOID WINAPIV ThreadUnload(Packet *Current) {
-		Packet *Next;
-		do {
-			Next = Current->Next;
-			delete Current;
-			SwitchToThread();
-		} while (Current = Next);
-	}
-	VOID Unload() {
-		if (_beginthread(_beginthread_proc_type(ThreadUnload), 0, Current) == -1L) {
-			ThreadUnload(Current); //out of memory, let's free some from our own thread
+	VOID SaveTTM() {
+		NeedParser ToSave;
+		BufferedFile File(FileName);
+		File.Write(Tibia::Version);
+		File.Write(Tibia::HostLen);
+		if (Tibia::HostLen) {
+			File.Write(Tibia::Host, Tibia::HostLen);
+			File.Write(Tibia::Port);
 		}
-	}
-
-	VOID SetFileTitle() {
-		TCHAR Title[MAX_PATH];
-		LPTSTR Name = PathFindFileName(FileName);
-		SIZE_T NameLen = PathFindExtension(Name) - Name;
-		if (NameLen > MAX_PATH - countof(MainWnd::Title)) {
-			NameLen = MAX_PATH - countof(MainWnd::Title);
-		}
-		CopyMemory(Title, Name, TLEN(NameLen));
-		CopyMemory(Title + NameLen, _T(" - "), TLEN(3));
-		CopyMemory(Title + NameLen + 3, MainWnd::Title, sizeof(MainWnd::Title));
-		SetWindowText(MainWnd::Handle, Title);
-	}
-	VOID ClearFileTitle() {
-		SetWindowText(MainWnd::Handle, MainWnd::Title);
-	}
-
-	UINT Save() {
-		try {
-			BufferedFile File(FileName);
-			File.Write(Tibia::Version);
-			File.Write(Tibia::HostLen);
-			if (Tibia::HostLen) {
-				File.Write(Tibia::Host, Tibia::HostLen);
-				File.Write(Tibia::Port);
+		File.Write(Last->Time);
+		PacketData* Packet = Parser->GetPacketData(*(Current = First));
+		File.Write(Packet, Packet->RawSize());
+		MainWnd::Progress_Set(0, Last->Time);
+		while (Current->Next) {
+			if (Current->IsLast()) {
+				File.Write(BYTE(TRUE));
 			}
-			File.Write(Last->Time);
-			NeedParser ToSave;
-			PacketData* Packet = Parser->GetPacketData(*(Current = First));
+			else {
+				File.Write(BYTE(FALSE));
+				File.Write(WORD(Current->Next->Time - Current->Time));
+			}
+			Packet = Parser->GetPacketData(*(Current = Current->Next));
 			File.Write(Packet, Packet->RawSize());
-			MainWnd::Progress_Set(0, Last->Time);
-			while (Current->Next) {
-				if (Current->IsLast()) {
-					File.Write(BYTE(TRUE));
-				}
-				else {
-					File.Write(BYTE(FALSE));
-					File.Write(WORD(Current->Next->Time - Current->Time));
-				}
-				Packet = Parser->GetPacketData(*(Current = Current->Next));
-				File.Write(Packet, Packet->RawSize());
-				MainWnd::Progress_Set(Current->Time, Last->Time);
-			}
-			File.Save();
-			Changed = FALSE;
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		catch (exception &e) {
-			DeleteFile(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		return NULL;
+		File.Save();
 	}
 
 	UINT BeforeOpen(BOOL &Override, CONST HWND Parent, CONST WORD Version, CONST BYTE HostLen, CONST LPCSTR Host, CONST WORD Port) {
@@ -250,146 +212,75 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	Packet *&Started() {
-		return Last ? Last->Next : First;
-	}
-	VOID CancelOpen(CONST BOOL Override) {
-		if (Packet *&Start = Started()) {
-			if (Override) {
-				AfterOpen(TRUE);
-			}
-			else {
-				Current = Start;
-				Start = NULL;
-				Unload();
-			}
-		}
-	}
-
 	struct FilePacket : private NeedParser, PacketBase {
 		BOOL Read(MappedFile& File) {
 			Set(LPBYTE(File.Skip(2)));
-			if (P && P->Size && File.Skip(P->Size)) {
-				Parser->SetPacket(*this);
-				return Parser->GetPacketType();
-			}
-			return FALSE;
+			if (!P->Size) return FALSE;
+			File.Skip(P->Size);
+			Parser->SetPacket(*this);
+			return Parser->GetPacketType();
 		}
-		BOOL Record(Packet *&Next) {
-			if (Next) {
-				if (CONST LPBYTE Data = Parser->AllocPacket(*Next, P->Size)) {
-					CopyMemory(Data, P->Data, P->Size);
-					return TRUE;
-				}
-				delete Next;
-				Next = NULL;
-			}
-			return FALSE;
+		VOID Record(Packet *CONST Next) {
+			CONST LPBYTE Data = Parser->AllocPacket(*Next, P->Size);
+			if (!Data) throw bad_alloc();
+			CopyMemory(Data, P->Data, P->Size);
 		}
 	};
 
-	UINT Open(BOOL Override, CONST HWND Parent) {
-		MappedFile File;
-		if (!File.Open(FileName)) {
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
-		}
-		WORD Version;
-		if (!File.Read(Version)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		BYTE HostLen;
-		if (!File.Read(HostLen) || HostLen > 127) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		LPCSTR Host = NULL; WORD Port = PORT;
+	UINT OpenTTM(BOOL Override, CONST HWND Parent) {
+		MappedFile File(FileName);
+		WORD Version = File.Read<WORD>();
+		BYTE HostLen = File.Read<BYTE>();
+		if (HostLen > 127) return ERROR_CORRUPT_VIDEO;
+		LPCSTR Host = NULL;
+		WORD Port = PORT;
 		if (HostLen) {
 			Host = LPCSTR(File.Skip(HostLen));
-			if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
-				return ERROR_CORRUPT_VIDEO;
-			}
-			if (!File.Read(Port) || !Port) {
-				return ERROR_CORRUPT_VIDEO;
-			}
+			File.Read(Port);
+			if (!Port || !Tibia::VerifyHost(Host, HostLen)) return ERROR_CORRUPT_VIDEO;
 		}
-		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
-			return Error;
-		}
-		DWORD TotalTime;
-		if (!File.Read(TotalTime)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		FilePacket Src; // parses the packet from the buffer (or mapping)
-		if (!Src.Read(File) || !Parser->PlayerData) {
-			return ERROR_CORRUPT_VIDEO;
-		}
+		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) return Error;
+		DWORD TotalTime = File.Read<DWORD>();
+		FilePacket Src;
+		if (!Src.Read(File) || !Parser->PlayerData) return ERROR_CORRUPT_VIDEO;
 		if (!Parser->EnterGame) { // videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
-			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) {
-				return ERROR_CORRUPT_VIDEO;
-			}
+			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) return ERROR_CORRUPT_VIDEO;
 		}
 		if (Last) {
-			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) {
-				return ERROR_CANNOT_APPEND;
-			}
+			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) return ERROR_CANNOT_APPEND;
 			TotalTime += Last->Time + 1000;
-			if (!Src.Record(Last->Next = new(nothrow) Session(Last))) {
-				return ERROR_CANNOT_OPEN_VIDEO_FILE;
-			}
-			Current = Last->Next;
+			Current = Last->Next = new Session(Last);
 		}
 		else {
-			if (!Src.Record(First = new(nothrow) Session())) {
-				return ERROR_CANNOT_OPEN_VIDEO_FILE;
-			}
-			Current = First;
+			Current = First = new Session();
 		}
-		if (!Parser->FixEnterGame(*Current)) {
-			CancelOpen(Override);
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
-		}
-		for (BYTE EnterGame; File.Read(EnterGame); Current = Current->Next) {
+		Src.Record(Current);
+		if (!Parser->FixEnterGame(*Current)) throw bad_alloc();
+		for (BYTE EnterGame; File.Peek(EnterGame); Src.Record(Current)) {
 			MainWnd::Progress_Set(Current->Time, TotalTime);
 			if (!EnterGame) {
-				WORD Delay;
-				if (!File.Read(Delay) || Delay > TotalTime - Current->Time) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!Src.Record(Current->Next = new(nothrow) Packet(Current, Delay)) || !Parser->FixTrade(*Current->Next)) {
-					CancelOpen(Override);
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
+				WORD Delay = File.Read<WORD>();
+				if (Delay > TotalTime - Current->Time) throw bad_read();
+				if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) throw bad_read();
+				Current = Current->Next = new Packet(Current, Delay);
+				if (!Parser->FixTrade(*Current)) throw bad_alloc();
 			}
 			else if (EnterGame == TRUE) {
-				if (1000 > TotalTime - Current->Time) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
+				if (1000 > TotalTime - Current->Time) throw bad_read();
 				Current->EndSession();
-				if (!Src.Read(File) || !Parser->EnterGame) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!Src.Record(Current->Next = new(nothrow) Session(Current)) || !Parser->FixEnterGame(*Current->Next)) {
-					CancelOpen(Override);
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
+				if (!Src.Read(File) || !Parser->EnterGame) throw bad_read();
+				Current = Current->Next = new Session(Current);
+				if (!Parser->FixEnterGame(*Current)) throw bad_alloc();
 			}
-			else {
-				CancelOpen(Override);
-				return ERROR_CORRUPT_VIDEO;
-			}
+			else throw bad_read();
 		}
-		if (Current->Time != TotalTime) {
-			CancelOpen(Override);
-			return ERROR_CORRUPT_VIDEO;
-		}
+		if (Current->Time != TotalTime) throw bad_read();
 		AfterOpen(Override);
 		return NULL;
+	}
+
+	Packet*& Started() {
+		return Last ? Last->Next : First;
 	}
 
 	class Converter : private NeedParser, PacketBase {
@@ -406,7 +297,7 @@ namespace Video {
 		~Converter() {
 			delete[] LPBYTE(P);
 		}
-		BOOL Read(LPCBYTE Data, DWORD Avail) {
+		VOID Read(LPCBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
 				Data += Want;
@@ -414,10 +305,7 @@ namespace Video {
 				if (!P) {
 					if (PacketSize) {
 						Store = Parser->AllocPacket(*this, PacketSize);
-						if (!Store) {
-							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-							return FALSE;
-						}
+						if (!Store) throw bad_alloc();
 						Want = PacketSize;
 					}
 					else {
@@ -427,30 +315,17 @@ namespace Video {
 				}
 				else {
 					if (!Parser->GetPacketType()) {
-						Time = ERROR_CORRUPT_VIDEO;
-						return FALSE;
+						throw bad_read();
 					}
 					if (Parser->EnterGame) {
-						if (!Parser->FixEnterGame(*this)) {
-							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-							return FALSE;
-						}
+						if (!Parser->FixEnterGame(*this)) throw bad_alloc();
 						if (Current) {
-							if (1000 > INFINITE - Current->Time) {
-								Time = ERROR_CANNOT_APPEND;
-								return FALSE;
-							}
+							if (1000 > INFINITE - Current->Time) throw bad_alloc();
 							Current->EndSession();
-							if (!(Current = Current->Next = new(nothrow) Session(Current))) {
-								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-								return FALSE;
-							}
+							Current = Current->Next = new Session(Current);
 						}
 						else {
-							if (!(Current = First = new(nothrow) Session())) {
-								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-								return FALSE;
-							}
+							Current = First = new Session();
 						}
 						Current->Record(*this);
 					}
@@ -458,14 +333,8 @@ namespace Video {
 						Discard(); // pending packet, just get data (should not exist, but who knwows)
 					}
 					else {
-						if (!Started())  {
-							Time = ERROR_CORRUPT_VIDEO;
-							return FALSE; // common packet without a login packet first (usually wrong version selected)
-						}
-						if (!Parser->FixTrade(*this)) {
-							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-							return FALSE;
-						}
+						if (!Started()) throw bad_read(); // common packet without a login packet first (usually wrong version selected)
+						if (!Parser->FixTrade(*this)) throw bad_alloc();
 						DWORD Delay = Time - LastTime;
 						if (Delay > BIGDELAY) {
 							Delay = BIGDELAY;
@@ -473,10 +342,7 @@ namespace Video {
 						if (Delay > INFINITE - Current->Time) {
 							Delay = INFINITE - Current->Time;
 						}
-						if (!(Current = Current->Next = new(nothrow) Packet(Current, WORD(Delay)))) {
-							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
-							return FALSE;
-						}
+						Current = Current->Next = new Packet(Current, WORD(Delay));
 						Current->Record(*this);
 					}
 					LastTime = Time;
@@ -489,7 +355,6 @@ namespace Video {
 				Store += Avail;
 				Want -= Avail;
 			}
-			return TRUE;
 		}
 	};
 
@@ -500,133 +365,77 @@ namespace Video {
 		MainWnd::Progress_Set(DecSize, TotalSize);
 		return 0;
 	}
-	UINT SaveCAM() {
-		try {
-			NeedParser ToSave;
-			DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
-			for (Current = First; Current = Current->Next; Packets++) {
-				if (Packets == INFINITE) {
-					throw exception();
-				}
-				CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
-				if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
-					throw exception();
-				}
-				MainWnd::Progress_Set(Current->Time, Last->Time);
-			}
-			LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
-			File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
-			File.Write(Tibia::Version / 100 % 100 | Tibia::Version / 10 % 10 << 8 | DWORD(Tibia::Version) % 10 << 16);
-			if (Tibia::HostLen) {
-				File.Write(DWORD(Tibia::HostLen) + 3);
-				File.Write(Tibia::HostLen);
-				File.Write(Tibia::Host, Tibia::HostLen);
-				File.Write(Tibia::Port);
-			}
-			else {
-				File.Write(DWORD(0));
-			}
-			File.Compress();
-			File.Write(RECVersion()); // Ignored by all players
-			File.Write(BYTE(2)); // It mimics an encrypted REC file, but without encryption
-			File.Write(Packets);
-			Current = First;
-			do {
-				PacketData* Packet = Parser->GetPacketData(*Current);
-				File.Write(WORD(Size = Packet->RawSize()));
-				File.Write(Current->Time);
-				File.Write(Packet, Size);
-				File.Write(crc32(0, Packet->Data, Packet->Size));
-				MainWnd::Progress_Set(Current->Time, Last->Time);
-			} while (Current = Current->Next);
-			File.Save(CAMProgressCallback);
-			Changed = FALSE;
+	VOID SaveCAM() {
+		NeedParser ToSave;
+		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
+		for (Current = First; Current = Current->Next; Packets++) {
+			if (Packets == INFINITE) throw exception();
+			CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
+			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) throw exception();
+			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
-		catch (exception& e) {
-			DeleteFile(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
+		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
+		File.Write(Tibia::Version / 100 % 100 | Tibia::Version / 10 % 10 << 8 | DWORD(Tibia::Version) % 10 << 16);
+		if (Tibia::HostLen) {
+			File.Write(DWORD(Tibia::HostLen) + 3);
+			File.Write(Tibia::HostLen);
+			File.Write(Tibia::Host, Tibia::HostLen);
+			File.Write(Tibia::Port);
 		}
-		return NULL;
+		else {
+			File.Write(DWORD(0));
+		}
+		File.Compress();
+		File.Write(RECVersion()); // Ignored by all players
+		File.Write(BYTE(2)); // It mimics an encrypted REC file, but without encryption
+		File.Write(Packets);
+		Current = First;
+		do {
+			PacketData* Packet = Parser->GetPacketData(*Current);
+			File.Write(WORD(Size = Packet->RawSize()));
+			File.Write(Current->Time);
+			File.Write(Packet, Size);
+			File.Write(crc32(0, Packet->Data, Packet->Size));
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		} while (Current = Current->Next);
+		File.Save(CAMProgressCallback);
 	}
 	UINT OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmaMappedFile File;
-		if (!File.Open(FileName)) {
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
-		}
+		LzmaMappedFile File(FileName);
 		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
-		if (!Hash) {
-			return ERROR_CORRUPT_VIDEO;
-		}
 		CONST LPCBYTE VersionPart = File.Skip(4);
-		if (!VersionPart || VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) {
-			return ERROR_CORRUPT_VIDEO;
-		}
+		if (VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) return ERROR_CORRUPT_VIDEO;
 		CONST WORD Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
 		BYTE HostLen = NULL;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
-		DWORD Metadata;
-		if (!File.Read(Metadata)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (Metadata) {
-			if (!DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
-				if (Metadata < 4 || Metadata > 130) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.Read(HostLen) || HostLen != Metadata - 3) {
-					return ERROR_CORRUPT_VIDEO;
-				}
+		if (DWORD Metadata = File.Read<DWORD>()) {
+			if (DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
+				File.Skip(Metadata);
+			}
+			else {
+				if (Metadata < 4 || Metadata > 130) return ERROR_CORRUPT_VIDEO;
+				File.Read(HostLen);
+				if (HostLen != Metadata - 3) return ERROR_CORRUPT_VIDEO;
 				Host = LPCSTR(File.Skip(HostLen));
-				if (!Host || !Tibia::VerifyHost(Host, HostLen)) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.Read(Port) || !Port) {
-					return ERROR_CORRUPT_VIDEO;
-				}
-			}
-			else if (!File.Skip(Metadata)) {
-				return ERROR_CORRUPT_VIDEO;
+				File.Read(Port);
+				if (!Port || !Tibia::VerifyHost(Host, HostLen)) return ERROR_CORRUPT_VIDEO;
 			}
 		}
-		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) {
-			return Error;
-		}
-		if (!File.Uncompress(Override)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		BYTE RecVersion;
-		if (!File.Read(RecVersion)) { // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (!File.Read(RecVersion) || RecVersion != 2) { // Fake TibiCAM encryption flag (but not really encrypted)
-			return ERROR_CORRUPT_VIDEO;
-		}
-		DWORD Packets;
-		if (!File.Read(Packets) || Packets < 58) {
-			return ERROR_CORRUPT_VIDEO;
-		}
+		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, HostLen, Host, Port)) return Error;
+		File.Uncompress(Override);
+		BYTE RecVersion = File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+		File.Read(RecVersion); // Fake TibiCAM encryption flag (but not really encrypted)
+		if (RecVersion != 2) return ERROR_CORRUPT_VIDEO;
+		DWORD Packets = File.Read<DWORD>();
+		if (Packets < 58) return ERROR_CORRUPT_VIDEO;
 		Packets -= 57;
 		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
 		for (DWORD i = 0; i < Packets; i++) {
-			WORD Size;
-			if (!File.Read(Size)) {
-				CancelOpen(Override);
-				return ERROR_CORRUPT_VIDEO;
-			}
-			if (!File.Read(Src.Time)) {
-				CancelOpen(Override);
-				return ERROR_CORRUPT_VIDEO;
-			}
-			CONST LPCBYTE Data = File.Skip(DWORD(Size) + 4); // Ignore checksum, some recorders misuse it (LZMA already checksums)
-			if (!Data) {
-				CancelOpen(Override);
-				return ERROR_CORRUPT_VIDEO;
-			}
-			if (!Src.Read(Data, Size)) {
-				CancelOpen(Override);
-				return Src.Time;
-			}
+			WORD Size = File.Read<WORD>();
+			File.Read(Src.Time);
+			Src.Read(File.Skip(DWORD(Size) + 4), Size); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			MainWnd::Progress_Set(i, Packets);
 		}
 		if (!Started()) {
@@ -636,136 +445,78 @@ namespace Video {
 		return NULL;
 	}
 
-	UINT SaveTMV() {
-		try {
-			GzipBufferedFile File(FileName);
-			File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
-			File.Write(Tibia::Version);
-			File.Write(Last->Time);
-			File.Write(BYTE(FALSE));
-			File.Write(DWORD(0));
-			NeedParser ToSave;
-			PacketData* Packet = Parser->GetPacketData(*(Current = First));
-			WORD Size = Packet->RawSize();
-			if (Size < 2) {
-				Size = 0;
+	VOID SaveTMV() {
+		NeedParser ToSave;
+		GzipBufferedFile File(FileName);
+		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
+		File.Write(Tibia::Version);
+		File.Write(Last->Time);
+		File.Write(BYTE(FALSE));
+		File.Write(DWORD(0));
+		PacketData* Packet = Parser->GetPacketData(*(Current = First));
+		WORD Size = Packet->RawSize();
+		if (Size < 2) Size = 0;
+		File.Write(Size);
+		File.Write(Packet, Size);
+		while (Current->Next) {
+			if (Current->IsLast()) {
+				File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
 			}
+			File.Write(BYTE(FALSE));
+			File.Write(Current->Next->Time - Current->Time);
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+			if ((Size = (Packet = Parser->GetPacketData(*(Current = Current->Next)))->RawSize()) < 2) Size = 0;
 			File.Write(Size);
 			File.Write(Packet, Size);
-			while (Current->Next) {
-				if (Current->IsLast()) {
-					File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
-				}
-				File.Write(BYTE(FALSE));
-				File.Write(Current->Next->Time - Current->Time);
-				MainWnd::Progress_Set(Current->Time, Last->Time);
-				if ((Size = (Packet = Parser->GetPacketData(*(Current = Current->Next)))->RawSize()) < 2) {
-					Size = 0;
-				}
-				File.Write(Size);
-				File.Write(Packet, Size);
-			}
-			File.Save();
-			Changed = FALSE;
 		}
-		catch (exception& e) {
-			DeleteFile(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		return NULL;
+		File.Save();
 	}
 	UINT OpenTMV(BOOL Override, CONST HWND Parent) {
-		GzipMappedFile File;
-		if (!File.Open(FileName)) {
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
-		}
-		WORD Version;
-		if (!File.Read(Version) || Version != 2) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (!File.Read(Version)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		DWORD TotalTime;
-		if (!File.Read(TotalTime)) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (CONST UINT Error = BeforeOpen(Override, Parent, Version, NULL, NULL, PORT)) {
-			return Error;
-		}
+		GzipMappedFile File(FileName);
+		if (File.Read<WORD>() != 2) return ERROR_CORRUPT_VIDEO;
+		if (CONST UINT Error = BeforeOpen(Override, Parent, File.Read<WORD>(), NULL, NULL, PORT)) return Error;
+		DWORD TotalTime = File.Read<DWORD>();
 		Converter Src;
 		Src.Time = 0;
-		for (BYTE Marker; File.Read(Marker); MainWnd::Progress_Set(Src.Time, TotalTime)) {
+		for (BYTE Marker; File.Peek(Marker); MainWnd::Progress_Set(Src.Time, TotalTime)) {
 			if (!Marker) {
-				DWORD Delay;
-				if (!File.Read(Delay) || !Override && Delay > TotalTime - Src.Time) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				Src.Time += Delay;
-				WORD Size;
-				if (!File.Read(Size)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (Size) { // TMV adds zero-sized packets to delay between merged videos
+				Src.Time += File.Read<DWORD>();
+				if (WORD Size = File.Read<WORD>()) { // TMV adds zero-sized packets to delay between merged videos
 					BYTE Data[0xFFFF];
-					if (!File.Read(Data, Size)) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-					if (!Src.Read(Data, Size)) {
-						CancelOpen(Override);
-						return Src.Time;
-					}
+					File.Read(Data, Size);
+					Src.Read(Data, Size);
 				}
 			}
-			else if (Marker != TRUE) {
-				CancelOpen(Override);
-				return ERROR_CORRUPT_VIDEO;
-			}
+			else if (Marker != TRUE) throw bad_read();
 		}
+		if (Src.Time != TotalTime) throw bad_read();
 		if (!Started()) {
-			return ERROR_CORRUPT_VIDEO;
-		}
-		if (Src.Time != TotalTime) {
-			CancelOpen(Override);
 			return ERROR_CORRUPT_VIDEO;
 		}
 		AfterOpen(Override);
 		return NULL;
 	}
 
-	UINT SaveREC() {
-		try {
-			DWORD Packets = 1;
-			for (Current = First; Current = Current->Next; Packets++) {
-				if (Packets == INFINITE) {
-					throw exception();
-				}
-			}
-			BufferedFile File(FileName);
-			File.Write(RECVersion()); // this version control is what made me create ttm
-			File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
-			File.Write(Packets);
-			NeedParser ToSave;
-			Current = First;
-			do {
-				PacketData* Packet = Parser->GetPacketData(*Current);
-				DWORD Size = Packet->RawSize();
-				File.Write(Size);
-				File.Write(Current->Time);
-				File.Write(Packet, Size);
-				MainWnd::Progress_Set(Current->Time, Last->Time);
-			} while (Current = Current->Next);
-			File.Save();
-			Changed = FALSE;
+	VOID SaveREC() {
+		DWORD Packets = 1;
+		for (Current = First; Current = Current->Next; Packets++) {
+			if (Packets == INFINITE) throw exception();
 		}
-		catch (exception& e) {
-			DeleteFile(FileName);
-			return ERROR_CANNOT_SAVE_VIDEO_FILE;
-		}
-		return NULL;
+		NeedParser ToSave;
+		BufferedFile File(FileName);
+		File.Write(RECVersion()); // this version control is what made me create ttm
+		File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
+		File.Write(Packets);
+		Current = First;
+		do {
+			PacketData* Packet = Parser->GetPacketData(*Current);
+			DWORD Size = Packet->RawSize();
+			File.Write(Size);
+			File.Write(Current->Time);
+			File.Write(Packet, Size);
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		} while (Current = Current->Next);
+		File.Save();
 	}
 	WORD GuessVersion(CONST BYTE RecVersion, CONST BYTE Encryption) {
 		switch (RecVersion) { //TODO: guess version by packet contents
@@ -786,38 +537,25 @@ namespace Video {
 		return LATEST; //never happens
 	}
 	UINT OpenREC(BOOL Override, CONST HWND Parent) {
-		MappedFile File;
-		if (!File.Open(FileName)) {
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
-		}
-		BYTE RecVersion;
-		if (!File.Read(RecVersion) || RecVersion < 2) { // we are supporting more versions than tibicam itself
-			return ERROR_CORRUPT_VIDEO;
-		}
-		BYTE Encryption;
-		if (!File.Read(Encryption) || !Encryption || Encryption > 2) {
-			return ERROR_CORRUPT_VIDEO;
-		}
+		MappedFile File(FileName);
+		BYTE RecVersion = File.Read<BYTE>();
+		if (RecVersion < 2) return ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
+		BYTE Encryption = File.Read<BYTE>();
+		if (!Encryption || Encryption > 2) return ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
 			Tibia::SetHost(GuessVersion(RecVersion, Encryption), NULL, LPCTSTR(NULL), PORT);
 			MainWnd::Progress_Pause();
-			if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
-				return ERROR_TIBICAM_VERSION;
-			}
+			if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) return ERROR_TIBICAM_VERSION;
 			MainWnd::Progress_Start();
 		}
-		DWORD Packets;
+		DWORD Packets = File.Read<DWORD>();
 		Converter Src;
 		if (Encryption == 2) {
-			if (!File.Read(Packets) || Packets < 58) {
-				return ERROR_CORRUPT_VIDEO;
-			}
+			if (Packets < 58) return ERROR_CORRUPT_VIDEO;
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) {
-					return ERROR_CANNOT_OPEN_VIDEO_FILE;
-				}
+				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				CONST DWORD AesMode = CRYPT_MODE_ECB;
 				if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
 					CryptDestroyKey(RecKey);
@@ -826,26 +564,12 @@ namespace Video {
 				}
 			}
 			for (DWORD i = 0; i < Packets; i++) {
-				WORD Size;
-				if (!File.Read(Size)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.Read(Src.Time)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
+				WORD Size = File.Read<WORD>();
+				File.Read(Src.Time);
 				CONST LPCBYTE Encrypted = File.Skip(Size);
-				if (!Encrypted) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
 				BYTE Data[0xFFFF];
-				DWORD Checksum;
-				if (!File.Read(Checksum) || !Override && Checksum != adler32(1, Encrypted, Size)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
+				DWORD Checksum = File.Read<DWORD>();
+				if (!Override && Checksum != adler32(1, Encrypted, Size)) throw bad_read();
 				CHAR Key = Size + Src.Time - 31, Rem;
 				for (WORD i = 0; i < Size; i++) {
 					if ((Rem = (Key += 33) % Mod) > 0) {
@@ -854,42 +578,17 @@ namespace Video {
 					Data[i] = Encrypted[i] - Key + Rem;
 				}
 				DWORD Decrypted = Size;
-				if (RecVersion > 4 && Decrypted) {
-					if (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Decrypted) || !Decrypted) {
-						CancelOpen(Override);
-						return ERROR_CORRUPT_VIDEO;
-					}
-				}
-				if (!Src.Read(Data, Decrypted)) {
-					CancelOpen(Override);
-					return Src.Time;
-				}
+				if (RecVersion > 4 && Decrypted && (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Decrypted) || !Decrypted)) throw bad_read();
+				Src.Read(Data, Decrypted);
 				MainWnd::Progress_Set(i, Packets);
 			}
 		}
 		else {
-			if (!File.Read(Packets) || !Packets) {
-				return ERROR_CORRUPT_VIDEO;
-			}
+			if (!Packets) return ERROR_CORRUPT_VIDEO;
 			for (DWORD i = 0; i < Packets; i++) {
-				DWORD Size;
-				if (!File.Read(Size)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!File.Read(Src.Time)) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				CONST LPCBYTE Data = File.Skip(Size);
-				if (!Data) {
-					CancelOpen(Override);
-					return ERROR_CORRUPT_VIDEO;
-				}
-				if (!Src.Read(Data, Size)) {
-					CancelOpen(Override);
-					return Src.Time;
-				}
+				DWORD Size = File.Read<DWORD>();
+				File.Read(Src.Time);
+				Src.Read(File.Skip(Size), Size);
 				MainWnd::Progress_Set(i, Packets);
 			}
 		}
@@ -898,6 +597,57 @@ namespace Video {
 		}
 		AfterOpen(Override);
 		return NULL;
+	}
+
+	VOID SaveMultiple(CONST DWORD Format) {
+		switch (Format) {
+		case FILETYPE_TTM:
+			return SaveTTM();
+		case FILETYPE_CAM:
+			return SaveCAM();
+		case FILETYPE_TMV:
+			return SaveTMV();
+		case FILETYPE_REC:
+			return SaveREC();
+		}
+	}
+	UINT OpenMultiple(CONST DWORD Format, CONST BOOL Override, CONST HWND Parent) {
+		switch (Format) {
+		case FILETYPE_TTM:
+			return OpenTTM(Override, Parent);
+		case FILETYPE_CAM:
+			return OpenCAM(Override, Parent);
+		case FILETYPE_TMV:
+			return OpenTMV(Override, Parent);
+		case FILETYPE_REC:
+			return OpenREC(Override, Parent);
+		}
+	}
+
+	VOID WINAPIV ThreadUnload(Packet* Current) {
+		Packet* Next;
+		do {
+			Next = Current->Next;
+			delete Current;
+			SwitchToThread();
+		} while (Current = Next);
+	}
+	VOID Unload() {
+		if (_beginthread(_beginthread_proc_type(ThreadUnload), 0, Current) == -1L) {
+			ThreadUnload(Current); //out of memory, let's free some from our own thread
+		}
+	}
+	VOID CancelOpen(CONST BOOL Override) {
+		if (Packet*& Start = Started()) {
+			if (Override) {
+				AfterOpen(TRUE);
+			}
+			else {
+				Current = Start;
+				Start = NULL;
+				Unload();
+			}
+		}
 	}
 
 	DWORD DetectFormat() {
@@ -918,39 +668,58 @@ namespace Video {
 		return NULL;
 	}
 
-	UINT SaveMultiple(CONST DWORD Format, CONST BOOL Override, CONST HWND Parent) {
-		switch (Format) {
-		case NULL:
-			break;
-		case FILETYPE_TTM:
-			return Save();
-		case FILETYPE_CAM:
-			return SaveCAM();
-		case FILETYPE_TMV:
-			return SaveTMV();
-		case FILETYPE_REC:
-			return SaveREC();
-		case FILETYPE_ALL:
-			return SaveMultiple(DetectFormat(), Override, Parent);
+	UINT Save(DWORD Format, CONST BOOL Override, CONST HWND Parent) {
+		if (Format == FILETYPE_ALL) {
+			Format = DetectFormat();
 		}
-		return ERROR_VIDEO_FORMAT_NOT_SUPPORTED;
+		if (!Format) return ERROR_VIDEO_FORMAT_NOT_SUPPORTED;
+		try {
+			SaveMultiple(Format);
+		}
+		catch (exception& e) {
+			DeleteFile(FileName);
+			return ERROR_CANNOT_SAVE_VIDEO_FILE;
+		}
+		Changed = FALSE;
+		return NULL;
 	}
-	UINT OpenMultiple(CONST DWORD Format, CONST BOOL Override, CONST HWND Parent) {
-		switch (Format) {
-		case NULL:
-			break;
-		case FILETYPE_TTM:
-			return Open(Override, Parent);
-		case FILETYPE_CAM:
-			return OpenCAM(Override, Parent);
-		case FILETYPE_TMV:
-			return OpenTMV(Override, Parent);
-		case FILETYPE_REC:
-			return OpenREC(Override, Parent);
-		case FILETYPE_ALL:
-			return OpenMultiple(DetectFormat(), Override, Parent);
+	UINT Open(DWORD Format, CONST BOOL Override, CONST HWND Parent) {
+		if (Format == FILETYPE_ALL) {
+			Format = DetectFormat();
 		}
-		return ERROR_VIDEO_FORMAT_NOT_SUPPORTED;
+		if (!Format) return ERROR_VIDEO_FORMAT_NOT_SUPPORTED;
+		try {
+			return OpenMultiple(Format, Override, Parent);
+		}
+		catch (bad_read& e) {
+			CancelOpen(Override);
+			return ERROR_CORRUPT_VIDEO;
+		}
+		catch (bad_alloc& e) {
+			CancelOpen(Override);
+			return ERROR_CANNOT_OPEN_VIDEO_FILE;
+		}
+		catch (exception& e) {
+			return ERROR_CANNOT_OPEN_VIDEO_FILE;
+		}
+		AfterOpen(Override);
+		return NULL;
+	}
+
+	VOID SetFileTitle() {
+		TCHAR Title[MAX_PATH];
+		LPTSTR Name = PathFindFileName(FileName);
+		SIZE_T NameLen = PathFindExtension(Name) - Name;
+		if (NameLen > MAX_PATH - countof(MainWnd::Title)) {
+			NameLen = MAX_PATH - countof(MainWnd::Title);
+		}
+		CopyMemory(Title, Name, TLEN(NameLen));
+		CopyMemory(Title + NameLen, _T(" - "), TLEN(3));
+		CopyMemory(Title + NameLen + 3, MainWnd::Title, sizeof(MainWnd::Title));
+		SetWindowText(MainWnd::Handle, Title);
+	}
+	VOID ClearFileTitle() {
+		SetWindowText(MainWnd::Handle, MainWnd::Title);
 	}
 
 	VOID OpenCmd(CONST LPCTSTR CmdLine) {
@@ -977,7 +746,7 @@ namespace Video {
 			return ErrorBox(ERROR_FILE_NOT_EXISTS, TITLE_OPEN_VIDEO);
 		}
 		MainWnd::Progress_Start();
-		if (CONST UINT Error = OpenMultiple(DetectFormat(), GetKeyState(VK_SHIFT) < 0, MainWnd::Handle)) {
+		if (CONST UINT Error = Open(FILETYPE_ALL, GetKeyState(VK_SHIFT) < 0, MainWnd::Handle)) {
 			ErrorBox(Error, TITLE_OPEN_VIDEO);
 		} //TODO: open exe, detect custom client and import accordingly
 		if (Last) {
@@ -1002,7 +771,7 @@ namespace Video {
 				CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 			}
 			MainWnd::Progress_Segment = i;
-			if (CONST UINT Error = OpenMultiple(DetectFormat(), Override, MainWnd::Handle)) {
+			if (CONST UINT Error = Open(FILETYPE_ALL, Override, MainWnd::Handle)) {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
 				if (Pos) {
@@ -1102,14 +871,14 @@ namespace Video {
 		OpenFileName.FlagsEx = 0;
 		if (Last) {
 			OpenFileName.nFilterIndex = DetectFormat();
-			OpenFileName.lCustData = LPARAM(SaveMultiple);
+			OpenFileName.lCustData = LPARAM(Save);
 			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOTESTFILECREATE | OFN_PATHMUSTEXIST;
 			LoadString(NULL, TITLE_SAVE_VIDEO, Title, 20);
 			GetSaveFileName(&OpenFileName);
 		}
 		else {
 			OpenFileName.nFilterIndex = FILETYPE_ALL;
-			OpenFileName.lCustData = LPARAM(OpenMultiple);
+			OpenFileName.lCustData = LPARAM(Open);
 			OpenFileName.Flags = OFN_ENABLESIZING | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_FILEMUSTEXIST;
 			LoadString(NULL, TITLE_OPEN_VIDEO, Title, 20);
 			if (GetOpenFileName(&OpenFileName)) {
@@ -1134,9 +903,10 @@ namespace Video {
 	}
 	VOID SaveRecovery() {
 		if (Changed) {
+			Changed = FALSE;
 			MainWnd::Progress_Start();
 			if (GetDesktop(_T("TTM Recovery.ttm"))) {
-				if (Save()) {
+				if(!Save(FILETYPE_TTM, FALSE, MainWnd::Handle)) {
 					MessageBeep(MB_ICONSTOP);
 				}
 			}

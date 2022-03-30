@@ -2,56 +2,44 @@
 #include "framework.h"
 #include "zlib.h"
 
-class File {
+struct bad_open : public exception {};
+struct bad_write: public exception {};
+struct bad_read : public exception {};
+
+class WritingFile {
 protected:
 	HANDLE Handle;
 
-	DWORD GetSize() CONST {
-		LARGE_INTEGER Size;
-		return GetFileSizeEx(Handle, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
+	VOID Delete() CONST {
+		if (HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
+			ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE);
+		}
+		throw bad_write();
 	}
 
 public:
-	File(): Handle(INVALID_HANDLE_VALUE) {}
-	~File() {
+	WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
+	}
+	WritingFile(CONST LPCTSTR FileName, CONST DWORD Seek) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
+		SetFilePointer(Handle, 0, NULL, Seek);
+	}
+	~WritingFile() {
 		CloseHandle(Handle);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
-		return (Handle = CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
+	VOID Save() CONST {
+		if (!FlushFileBuffers(Handle)) Delete();
 	}
-	BOOL Skip(CONST DWORD Size) CONST {
-		LARGE_INTEGER Position = { Size, 0 };
-		return SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT);
-	}
-	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
-		DWORD Read;
-		return ReadFile(Handle, Dest, Size, &Read, NULL) && Read == Size;
-	}
-	template <typename TYPE> BOOL Read(TYPE& Dest) CONST {
-		return Read(&Dest, sizeof(TYPE));
-	}
-
-	BOOL Append(CONST LPCTSTR FileName) {
-		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
-			SetFilePointer(Handle, 0, NULL, FILE_END);
-			return TRUE;
-		}
-		return FALSE;
-	}
-	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
+	VOID Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
 		DWORD Written;
-		return WriteFile(Handle, Src, Size, &Written, NULL) && Written == Size;
+		if (!WriteFile(Handle, Src, Size, &Written, NULL) || Written != Size) Delete();
 	}
-	template <typename TYPE> BOOL Write(CONST TYPE Src) CONST {
-		return Write(&Src, sizeof(TYPE));
+	template <typename TYPE> VOID Write(CONST TYPE& Src) CONST {
+		Write(&Src, sizeof(TYPE));
 	}
 };
-
-struct bad_open : public exception {};
-struct bad_read : public exception {};
-struct bad_create : public exception {};
-struct bad_write: public exception {};
 
 class ReadingFile {
 protected:
@@ -70,47 +58,30 @@ public:
 		CloseHandle(Handle);
 	}
 
-	VOID Skip(CONST DWORD Size) CONST {
+	BOOL Peek(CONST DWORD Size) CONST {
 		LARGE_INTEGER Position = { Size, 0 };
-		if (!SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT)) throw bad_read();
+		return SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT);
+	}
+	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) CONST {
+		DWORD Read;
+		return ReadFile(Handle, Dest, Size, &Read, NULL) && Read == Size;
+	}
+	template <typename TYPE> BOOL Peek(TYPE& Dest) CONST {
+		return Peek(&Dest, sizeof(TYPE));
+	}
+	VOID Skip(CONST DWORD Size) CONST {
+		if (!Peek(Size)) throw bad_read();
 	}
 	VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
-		DWORD Read;
-		if (!ReadFile(Handle, Dest, Size, &Read, NULL) || Read != Size) throw bad_read();
+		if (!Peek(Dest, Size)) throw bad_read();
 	}
 	template <typename TYPE> VOID Read(TYPE& Dest) CONST {
 		Read(&Dest, sizeof(TYPE));
 	}
-};
-
-class WritingFile {
-protected:
-	HANDLE Handle;
-
-	VOID Delete() CONST {
-		if (HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
-			ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE);
-		}
-		throw bad_write();
-	}
-
-public:
-	WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
-		if (Handle == INVALID_HANDLE_VALUE) throw bad_create();
-	}
-	~WritingFile() {
-		CloseHandle(Handle);
-	}
-
-	VOID Save() {
-		if (!FlushFileBuffers(Handle)) Delete();
-	}
-	VOID Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
-		DWORD Written;
-		if (!WriteFile(Handle, Src, Size, &Written, NULL) || Written != Size) Delete();
-	}
-	template <typename TYPE> VOID Write(CONST TYPE Src) CONST {
-		Write(&Src, sizeof(TYPE));
+	template <typename TYPE> TYPE Read() CONST {
+		TYPE Result;
+		Read(Result);
+		return Result;
 	}
 };
 
@@ -143,12 +114,12 @@ public:
 		CopyMemory(Buffer + Pos, Src, Size);
 		Pos += Size;
 	}
-	template <typename TYPE> VOID Write(CONST TYPE Src) {
+	template <typename TYPE> VOID Write(CONST TYPE& Src) {
 		Write(&Src, sizeof(TYPE));
 	}
 };
 
-class MappedFile : private File {
+class MappedFile : private ReadingFile {
 	LPCVOID Ptr;
 
 protected:
@@ -161,40 +132,48 @@ protected:
 	}
 
 public:
-	MappedFile(): Ptr(NULL) {}
+	MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) {
+		CONST DWORD Size = GetSize();
+		if (!Size) throw bad_open();
+		CONST HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL);
+		if (!Map) throw bad_open();
+		Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size);
+		CloseHandle(Map);
+		if (!Ptr) throw bad_open();
+		End = (Data = LPCBYTE(Ptr)) + Size;
+	}
 	~MappedFile() {
 		UnmapViewOfFile(Ptr);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
-		if (File::Open(FileName)) {
-			if (DWORD Size = GetSize()) {
-				if (HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
-					Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size);
-					CloseHandle(Map);
-					if (Ptr) {
-						return BOOL(End = (Data = LPCBYTE(Ptr)) + Size);
-					}
-				}
-			}
-		}
-		return FALSE;
+	LPCBYTE Peek(CONST DWORD Size) {
+		LPCBYTE Result = Data;
+		return ((Data += Size) <= End) ? Result : NULL;
+	}
+	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) {
+		LPCBYTE Src = Peek(Size);
+		return Src ? BOOL(CopyMemory(Dest, Src, Size)) : FALSE;
+	}
+	template <typename TYPE> BOOL Peek(TYPE& Dest) {
+		return Peek(&Dest, sizeof(TYPE));
 	}
 	LPCBYTE Skip(CONST DWORD Size) {
-		LPCBYTE Result = Data;
-		return (Data += Size) <= End ? Result : NULL;
+		if (LPCBYTE Result = Peek(Size)) return Result;
+		throw bad_read();
 	}
-	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
-		if (LPCBYTE Src = Skip(Size)) {
-			return BOOL(CopyMemory(Dest, Src, Size));
-		}
-		return FALSE;
+	VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
+		CopyMemory(Dest, Skip(Size), Size);
 	}
-	template <typename TYPE> BOOL Read(TYPE& Dest) {
-		return Read(&Dest, sizeof(TYPE));
+	template <typename TYPE> TYPE Read() {
+		if ((Data + sizeof(TYPE)) > End) throw bad_read();
+		return *(*(TYPE**)&Data)++;
+	}
+	template <typename TYPE> VOID Read(TYPE& Dest) {
+		Dest = Read<TYPE>();
 	}
 };
 
+#define SZ_ERROR_MEM 2
 #define SZ_ERROR_INPUT_EOF 6
 extern "C" { // Modded LzmaLib for compression progress
 	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
@@ -238,25 +217,24 @@ class LzmaMappedFile : public MappedFile {
 	LPBYTE Buf;
 
 public:
-	LzmaMappedFile() : Buf(NULL) {}
+	LzmaMappedFile(CONST LPCTSTR FileName) : MappedFile(FileName), Buf(NULL) {}
 	~LzmaMappedFile() {
 		delete[] Buf;
 	}
 
-	BOOL Uncompress(CONST BOOL AllowTruncated) {
-		DWORD OldSize;
-		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) { // very permissive about wrong sizes
-			if (CONST LPCBYTE Props = Skip(5)) {
-				DWORD Size, Large;
-				if (Read(Size) && Size && Read(Large) && !Large && (Buf = new(nothrow) BYTE[Size])) {
-					INT Error = LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5);
-					if (!Error || (Error == SZ_ERROR_INPUT_EOF && AllowTruncated)) {
-						return Unmap(), BOOL(End = (Data = Buf) + Size);
-					}
-				}
-			}
+	VOID Uncompress(CONST BOOL AllowTruncated) {
+		DWORD OldSize = Read<DWORD>();
+		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
+		CONST LPCBYTE Props = Skip(5);
+		DWORD Size = Read<DWORD>(), Large = Read<DWORD>();
+		if (!Size || Large) throw bad_read();
+		INT Error = LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &(OldSize = End - Data), Props, 5);
+		if (Error && (!AllowTruncated || Error != SZ_ERROR_INPUT_EOF)) {
+			if (Error == SZ_ERROR_MEM) throw bad_alloc();
+			else throw bad_read();
 		}
-		return FALSE;
+		Unmap();
+		End = (Data = Buf) + Size;
 	}
 };
 
@@ -296,28 +274,34 @@ public:
 
 class GzipMappedFile : private MappedFile, z_stream {
 public:
-	GzipMappedFile() {
+	GzipMappedFile(CONST LPCTSTR FileName) : MappedFile(FileName) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
+		next_in = LPBYTE(Data);
+		avail_in = End - Data;
+		if (inflateInit2(this, MAX_WBITS + 16) != Z_OK) throw bad_open();
 	}
 	~GzipMappedFile() {
 		inflateEnd(this);
 	}
 
-	BOOL Open(CONST LPCTSTR FileName) {
-		if (MappedFile::Open(FileName)) {
-			next_in = LPBYTE(Data);
-			avail_in = End - Data;
-			return inflateInit2(this, MAX_WBITS + 16) == Z_OK;
-		}
-		return FALSE;
-	}
-	BOOL Read(CONST LPVOID Dest, CONST DWORD Size) {
+	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) {
 		next_out = LPBYTE(Dest);
 		avail_out = Size;
 		return inflate(this, Z_SYNC_FLUSH) >= Z_OK && !avail_out;
 	}
-	template <typename TYPE> BOOL Read(TYPE& Dest) {
-		return Read(&Dest, sizeof(TYPE));
+	template <typename TYPE> BOOL Peek(TYPE& Dest) {
+		return Peek(&Dest, sizeof(TYPE));
+	}
+	VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
+		if (!Peek(Dest, Size)) throw bad_read();
+	}
+	template <typename TYPE> VOID Read(TYPE& Dest) {
+		Read(&Dest, sizeof(TYPE));
+	}
+	template <typename TYPE> TYPE Read() {
+		TYPE Result;
+		Read(Result);
+		return Result;
 	}
 };
