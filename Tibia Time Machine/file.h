@@ -10,14 +10,6 @@ protected:
 		LARGE_INTEGER Size;
 		return GetFileSizeEx(Handle, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
 	}
-	VOID Delete(CONST LPCTSTR FileName) {
-		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
-		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(FileName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
-			DeleteFile(FileName);
-			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
-			SetEndOfFile(Handle);
-		}
-	}
 
 public:
 	File(): Handle(INVALID_HANDLE_VALUE) {}
@@ -40,18 +32,12 @@ public:
 		return Read(&Dest, sizeof(TYPE));
 	}
 
-	BOOL Create(CONST LPCTSTR FileName) {
-		return (Handle = CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE;
-	}
 	BOOL Append(CONST LPCTSTR FileName) {
 		if ((Handle = CreateFile(FileName, FILE_WRITE_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) != INVALID_HANDLE_VALUE) {
 			SetFilePointer(Handle, 0, NULL, FILE_END);
 			return TRUE;
 		}
 		return FALSE;
-	}
-	BOOL Save() {
-		return FlushFileBuffers(Handle);
 	}
 	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
 		DWORD Written;
@@ -62,41 +48,72 @@ public:
 	}
 };
 
-class BufferedFile : protected File {
+class WritingFile {
 protected:
+	HANDLE Handle;
 	LPCTSTR DeleteName;
+
+	VOID Delete() CONST {
+		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
+		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(DeleteName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
+			DeleteFile(DeleteName);
+			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
+			SetEndOfFile(Handle);
+		}
+		throw exception();
+	}
+
+public:
+	WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)), DeleteName(FileName) {
+		if (Handle == INVALID_HANDLE_VALUE) throw exception();
+	}
+	~WritingFile() {
+		CloseHandle(Handle);
+	}
+
+	VOID Save() {
+		if (!FlushFileBuffers(Handle)) Delete();
+	}
+	VOID Write(CONST LPCVOID Src, CONST DWORD Size) CONST {
+		DWORD Written;
+		if (!WriteFile(Handle, Src, Size, &Written, NULL) || Written != Size) Delete();
+	}
+	template <typename TYPE> VOID Write(CONST TYPE Src) CONST {
+		Write(&Src, sizeof(TYPE));
+	}
+};
+
+class BufferedFile : protected WritingFile {
+protected:
 	DWORD Pos;
 	BYTE Buffer[0x20000];
 
-public:
-	BufferedFile() : Pos(0), DeleteName(NULL) {}
+	VOID Flush() {
+		if (Pos) {
+			WritingFile::Write(Buffer, Pos);
+			Pos = 0;
+		}
+	}
 
-	BOOL Create(CONST LPCTSTR FileName) {
-		return File::Create(DeleteName = FileName);
+public:
+	BufferedFile(CONST LPCTSTR FileName) : WritingFile(FileName), Pos(0) {}
+
+	VOID Save() {
+		Flush();
+		WritingFile::Save();
 	}
-	BOOL Save() {
-		if ((!Pos || File::Write(Buffer, Pos)) && File::Save()) {
-			return Pos = 0, TRUE;
-		}
-		return Delete(DeleteName), FALSE;
-	}
-	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
-		if (Size <= (sizeof(Buffer) - Pos)) {
-			CopyMemory(Buffer + Pos, Src, Size);
-			return Pos += Size, TRUE;
-		}
-		if (!Pos || File::Write(Buffer, Pos)) {
-			if (Size < sizeof(Buffer)) {
-				return BOOL(CopyMemory(Buffer, Src, Pos = Size));
-			}
-			if (File::Write(Src, Size)) {
-				return Pos = 0, TRUE;
+	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
+		if (Size > (sizeof(Buffer) - Pos)) {
+			Flush();
+			if (Size >= sizeof(Buffer)) {
+				return WritingFile::Write(Src, Size);
 			}
 		}
-		return Delete(DeleteName), FALSE;
+		CopyMemory(Buffer + Pos, Src, Size);
+		Pos += Size;
 	}
-	template <typename TYPE> BOOL Write(CONST TYPE Src) {
-		return Write(&Src, sizeof(TYPE));
+	template <typename TYPE> VOID Write(CONST TYPE Src) {
+		Write(&Src, sizeof(TYPE));
 	}
 };
 
@@ -154,44 +171,35 @@ extern "C" { // Modded LzmaLib for compression progress
 	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
 }
 
-class LzmaBufferedFile : private File {
+class LzmaBufferedFile : private WritingFile {
 	DWORD Skip;
 	LPBYTE Buf;
 	LPBYTE Data;
 
 public:
-	LzmaBufferedFile() : Buf(NULL) {}
+	LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) : WritingFile(FileName), Skip(Header + 17), Buf(new BYTE[Size * 2 + Skip]), Data(Buf + Size) {}
 	~LzmaBufferedFile() {
 		delete[] Buf;
 	}
 
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) {
-		if (Buf = new(nothrow) BYTE[Size * 2 + (Skip = Header + 17)]) {
-			return Data = Buf + Size, File::Create(FileName);
-		}
-		return FALSE;
-	}
 	VOID Compress() {
 		Data = Buf;
 	}
-	BOOL Save(CONST LPCTSTR FileName, CONST LPCVOID Callback) {
+	VOID Save(CONST LPCVOID Callback) {
 		DWORD Size = Data - Buf;
 		Data += Skip;
 		*(QWORD*)(Data - 8) = Size;
-		if (!LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
-			*(DWORD*)(Data - 17) = Size + 13;
-			if (File::Write(Data - Skip, Size + Skip) && File::Save()) {
-				return TRUE;
-			}
-		}
-		return Delete(FileName), FALSE;
+		if (LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) Delete();
+		*(DWORD*)(Data - 17) = Size + 13;
+		WritingFile::Write(Data - Skip, Size + Skip);
+		WritingFile::Save();
 	}
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		CopyMemory(Data, Src, Size);
 		Data += Size;
 	}
 	template <typename TYPE> VOID Write(CONST TYPE Src) {
-		*(*(TYPE**)&Data)++ = Src; // return Write(&Src, sizeof(TYPE));
+		*(*(TYPE**)&Data)++ = Src; // Write(&Src, sizeof(TYPE));
 	}
 };
 
@@ -223,41 +231,36 @@ public:
 
 class GzipBufferedFile : private BufferedFile, z_stream {
 public:
-	GzipBufferedFile() {
+	GzipBufferedFile(CONST LPCTSTR FileName) : BufferedFile(FileName) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
+		next_out = Buffer;
+		avail_out = sizeof(Buffer);
+		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK) {
+			Delete();
+		}
 	}
 	~GzipBufferedFile() {
 		deflateEnd(this);
 	}
 
-	BOOL Create(CONST LPCTSTR FileName) {
-		next_out = Buffer;
-		avail_out = sizeof(Buffer);
-		return deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK && BufferedFile::Create(FileName);
+	VOID Save() {
+		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
+			if (avail_out) Delete();
+			WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer));
+		}
+		WritingFile::Write(Buffer, sizeof(Buffer) - avail_out);
+		WritingFile::Save();
 	}
-	BOOL Save() {
-		do {
-			if (deflate(this, Z_FINISH) == Z_STREAM_END) {
-				if (File::Write(Buffer, sizeof(Buffer) - avail_out) && File::Save()) {
-					return TRUE;
-				}
-				break;
-			}
-		} while (!avail_out && File::Write(next_out = Buffer, avail_out = sizeof(Buffer)));
-		return Delete(DeleteName), FALSE;
-	}
-	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
+	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		next_in = LPBYTE(Src);
 		avail_in = Size;
-		while (deflate(this, Z_NO_FLUSH) == Z_OK && (avail_out || File::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
-			if (!avail_in) {
-				return TRUE;
-			}
-		}
-		return Delete(DeleteName), FALSE;
+		do {
+			if (deflate(this, Z_NO_FLUSH) != Z_OK) Delete();
+			if (!avail_out) WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer));
+		} while (avail_in);
 	}
-	template <typename TYPE> BOOL Write(CONST TYPE Src) {
+	template <typename TYPE> VOID Write(CONST TYPE Src) {
 		return Write(&Src, sizeof(TYPE));
 	}
 };

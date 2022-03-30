@@ -23,7 +23,7 @@
 #include <windowsx.h>
 #include <process.h>
 #include <wincrypt.h>
-#include <new.h>
+#include <new>
 
 typedef unsigned __int64 QWORD;
 typedef CONST BYTE FAR* LPCBYTE;
