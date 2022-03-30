@@ -166,7 +166,7 @@ public:
 	}
 
 	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) {
-		if (Buf = new(std::nothrow) BYTE[Size * 2 + (Skip = Header + 17)]) {
+		if (Buf = new(nothrow) BYTE[Size * 2 + (Skip = Header + 17)]) {
 			return Data = Buf + Size, File::Create(FileName);
 		}
 		return FALSE;
@@ -209,7 +209,7 @@ public:
 		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) { // very permissive about wrong sizes
 			if (CONST LPCBYTE Props = Skip(5)) {
 				DWORD Size, Large;
-				if (Read(Size) && Size && Read(Large) && !Large && (Buf = new(std::nothrow) BYTE[Size])) {
+				if (Read(Size) && Size && Read(Large) && !Large && (Buf = new(nothrow) BYTE[Size])) {
 					INT Error = LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5);
 					if (!Error || (Error == SZ_ERROR_INPUT_EOF && AllowTruncated)) {
 						return Unmap(), BOOL(End = (Data = Buf) + Size);

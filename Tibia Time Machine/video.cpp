@@ -351,13 +351,13 @@ namespace Video {
 				return ERROR_CANNOT_APPEND;
 			}
 			TotalTime += Last->Time + 1000;
-			if (!Src.Record(Last->Next = new(std::nothrow) Session(Last))) {
+			if (!Src.Record(Last->Next = new(nothrow) Session(Last))) {
 				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			Current = Last->Next;
 		}
 		else {
-			if (!Src.Record(First = new(std::nothrow) Session())) {
+			if (!Src.Record(First = new(nothrow) Session())) {
 				return ERROR_CANNOT_OPEN_VIDEO_FILE;
 			}
 			Current = First;
@@ -378,7 +378,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Record(Current->Next = new(std::nothrow) Packet(Current, Delay)) || !Parser->FixTrade(*Current->Next)) {
+				if (!Src.Record(Current->Next = new(nothrow) Packet(Current, Delay)) || !Parser->FixTrade(*Current->Next)) {
 					CancelOpen(Override);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
@@ -393,7 +393,7 @@ namespace Video {
 					CancelOpen(Override);
 					return ERROR_CORRUPT_VIDEO;
 				}
-				if (!Src.Record(Current->Next = new(std::nothrow) Session(Current)) || !Parser->FixEnterGame(*Current->Next)) {
+				if (!Src.Record(Current->Next = new(nothrow) Session(Current)) || !Parser->FixEnterGame(*Current->Next)) {
 					CancelOpen(Override);
 					return ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
@@ -460,13 +460,13 @@ namespace Video {
 								return FALSE;
 							}
 							Current->EndSession();
-							if (!(Current = Current->Next = new(std::nothrow) Session(Current))) {
+							if (!(Current = Current->Next = new(nothrow) Session(Current))) {
 								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
 						}
 						else {
-							if (!(Current = First = new(std::nothrow) Session())) {
+							if (!(Current = First = new(nothrow) Session())) {
 								Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 								return FALSE;
 							}
@@ -492,7 +492,7 @@ namespace Video {
 						if (Delay > INFINITE - Current->Time) {
 							Delay = INFINITE - Current->Time;
 						}
-						if (!(Current = Current->Next = new(std::nothrow) Packet(Current, WORD(Delay)))) {
+						if (!(Current = Current->Next = new(nothrow) Packet(Current, WORD(Delay)))) {
 							Time = ERROR_CANNOT_OPEN_VIDEO_FILE;
 							return FALSE;
 						}
@@ -1342,7 +1342,7 @@ namespace Video {
 		if (Last && 1000 > INFINITE - Last->Time || !Parser->FixEnterGame(Proxy::Server)) {
 			return Proxy::Server.Discard();
 		}
-		if (!(Current = Last ? Last->Next = new(std::nothrow) Session(Last) : First = new(std::nothrow) Session())) {
+		if (!(Current = Last ? Last->Next = new(nothrow) Session(Last) : First = new(nothrow) Session())) {
 			return Proxy::Server.Discard();
 		}
 		Timer::Start();
@@ -1363,7 +1363,7 @@ namespace Video {
 				Proxy::Server.Discard();
 				return Continue();
 			}
-			if (!(Current->Next = new(std::nothrow) Session(Current))) {
+			if (!(Current->Next = new(nothrow) Session(Current))) {
 				Proxy::Server.Discard();
 				return Continue();
 			}
@@ -1389,7 +1389,7 @@ namespace Video {
 			if (Delay > INFINITE - Current->Time) {
 				Delay = INFINITE - Current->Time;
 			}
-			if (!(Current->Next = new(std::nothrow) Packet(Current, WORD(Delay)))) {
+			if (!(Current->Next = new(nothrow) Packet(Current, WORD(Delay)))) {
 				Proxy::Server.Discard();
 				return Continue();
 			}
@@ -2705,7 +2705,7 @@ namespace Video {
 		if (!Proxy::Extra) {
 			return Logout();
 		}
-		Packet* Next = new(std::nothrow) Packet(Current, 0);
+		Packet* Next = new(nothrow) Packet(Current, 0);
 		if (!Next) {
 			Proxy::Extra.Discard();
 			return Logout();

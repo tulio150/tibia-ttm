@@ -31,7 +31,7 @@ public:
 		P = (PacketData*)New;
 	}
 	VOID Alloc(WORD Bytes) {
-		Set(new(std::nothrow) BYTE[DWORD(Bytes) + 2]);
+		Set(new(nothrow) BYTE[DWORD(Bytes) + 2]);
 		if (P) {
 			P->Size = Bytes;
 		}

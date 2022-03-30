@@ -137,3 +137,5 @@ inline VOID CopyMemoryW(CONST LPSTR Dst, CONST LPCWSTR Src, SIZE_T Len) {
 #define DecimalChars(x, chars)	Decimal(x, CharsToDigits(x, List##x(chars)))
 
 #include "lang.h"
+
+using namespace std;

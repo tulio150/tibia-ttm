@@ -239,7 +239,7 @@ namespace Tibia {
 	WORD GetPathVersion(CONST LPCTSTR Path) { //TODO: detect versions < 730 and > 1099
 		DWORD Handle, FileVersionInfoLen = GetFileVersionInfoSize(Path, &Handle);
 		if (FileVersionInfoLen) {
-			CONST LPBYTE FileVersionInfo = new(std::nothrow) BYTE[FileVersionInfoLen];
+			CONST LPBYTE FileVersionInfo = new(nothrow) BYTE[FileVersionInfoLen];
 			if (FileVersionInfo) {
 				if (GetFileVersionInfo(Path, Handle, FileVersionInfoLen, FileVersionInfo)) {
 					UINT InfoLen;
@@ -454,7 +454,7 @@ namespace Tibia {
 	}
 
 	BOOL MemorySearch(LPBYTE &Address, CONST IMAGE_SECTION_HEADER &Section, CONST LPCSTR Find, CONST SIZE_T Len, DWORD Occurrence) {
-		CONST LPSTR Buffer = new(std::nothrow) CHAR[Section.Misc.VirtualSize];
+		CONST LPSTR Buffer = new(nothrow) CHAR[Section.Misc.VirtualSize];
 		if (Buffer) {
 			if (ReadProcessMemory(Proc.hProcess, Address + Section.VirtualAddress, Buffer, Section.Misc.VirtualSize, NULL)) {
 				for (SIZE_T Pos = 0; Pos + Len < Section.Misc.VirtualSize; Pos++) {
@@ -476,7 +476,7 @@ namespace Tibia {
 		return FALSE;
 	}
 	BOOL MemorySearchAddress(LPBYTE &Address, CONST IMAGE_SECTION_HEADER &Section, CONST BYTE *CONST Find, CONST SIZE_T Len) {
-		CONST LPBYTE Buffer = new(std::nothrow) BYTE[Section.Misc.VirtualSize];
+		CONST LPBYTE Buffer = new(nothrow) BYTE[Section.Misc.VirtualSize];
 		if (Buffer) {
 			if (ReadProcessMemory(Proc.hProcess, Address + Section.VirtualAddress, Buffer, Section.Misc.VirtualSize, NULL)) {
 				for (SIZE_T Pos = 4; Pos + Len < Section.Misc.VirtualSize; Pos++) {

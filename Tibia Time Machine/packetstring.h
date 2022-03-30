@@ -34,7 +34,7 @@ struct STRING {
 	LPSTR Data;
 
 	STRING(): Len(0), Data(NULL) {}
-	STRING(CONST WORD NewLen): Len(NewLen), Data(new(std::nothrow) CHAR[Len + 1]) {
+	STRING(CONST WORD NewLen): Len(NewLen), Data(new(nothrow) CHAR[Len + 1]) {
 		if (Data) {
 			Data[Len] = 0;
 		}
