@@ -76,30 +76,24 @@ public:
 	}
 	BOOL Save() {
 		if ((!Pos || File::Write(Buffer, Pos)) && File::Save()) {
-			Pos = 0;
-			return TRUE;
+			return Pos = 0, TRUE;
 		}
-		Delete(DeleteName);
-		return FALSE;
+		return Delete(DeleteName), FALSE;
 	}
 	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
 		if (Size <= (sizeof(Buffer) - Pos)) {
 			CopyMemory(Buffer + Pos, Src, Size);
-			Pos += Size;
-			return TRUE;
+			return Pos += Size, TRUE;
 		}
 		if (!Pos || File::Write(Buffer, Pos)) {
 			if (Size < sizeof(Buffer)) {
-				CopyMemory(Buffer, Src, Pos = Size);
-				return TRUE;
+				return BOOL(CopyMemory(Buffer, Src, Pos = Size));
 			}
 			if (File::Write(Src, Size)) {
-				Pos = 0;
-				return TRUE;
+				return Pos = 0, TRUE;
 			}
 		}
-		Delete(DeleteName);
-		return FALSE;
+		return Delete(DeleteName), FALSE;
 	}
 	template <typename TYPE> BOOL Write(CONST TYPE Src) {
 		return Write(&Src, sizeof(TYPE));
@@ -128,11 +122,11 @@ public:
 		if (File::Open(FileName)) {
 			if (DWORD Size = GetSize()) {
 				if (HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL)) {
-					if (Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size)) {
-						CloseHandle(Map);
+					Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size);
+					CloseHandle(Map);
+					if (Ptr) {
 						return BOOL(End = (Data = LPCBYTE(Ptr)) + Size);
 					}
-					CloseHandle(Map);
 				}
 			}
 		}
@@ -153,7 +147,7 @@ public:
 	}
 };
 
-#define SZ_ERROR_DATA 1
+#define SZ_ERROR_INPUT_EOF 6
 extern "C" { // Modded LzmaLib for compression progress
 	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
 	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPCVOID Callback);
@@ -161,8 +155,8 @@ extern "C" { // Modded LzmaLib for compression progress
 }
 
 class LzmaBufferedFile : private File {
+	DWORD Skip;
 	LPBYTE Buf;
-	LPBYTE Temp;
 	LPBYTE Data;
 
 public:
@@ -171,28 +165,26 @@ public:
 		delete[] Buf;
 	}
 
-	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, DWORD Header) {
-		if (Buf = new(std::nothrow) BYTE[Size + (Header += Size + 17)]) {
-			Temp = (Data = Buf) + Header;
-			return File::Create(FileName);
+	BOOL Create(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) {
+		if (Buf = new(std::nothrow) BYTE[Size * 2 + (Skip = Header + 17)]) {
+			return Data = Buf + Size, File::Create(FileName);
 		}
 		return FALSE;
 	}
 	VOID Compress() {
-		Data = Temp;
+		Data = Buf;
 	}
 	BOOL Save(CONST LPCTSTR FileName, CONST LPCVOID Callback) {
-		DWORD Size = Data - Temp;
-		Data = Temp - Size;
+		DWORD Size = Data - Buf;
+		Data += Skip;
 		*(QWORD*)(Data - 8) = Size;
-		if (!LzmaCompress(Data, &Size, Temp, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
+		if (!LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) {
 			*(DWORD*)(Data - 17) = Size + 13;
-			if (File::Write(Buf, Data - Buf + Size) && File::Save()) {
+			if (File::Write(Data - Skip, Size + Skip) && File::Save()) {
 				return TRUE;
 			}
 		}
-		Delete(FileName);
-		return FALSE;
+		return Delete(FileName), FALSE;
 	}
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		CopyMemory(Data, Src, Size);
@@ -217,12 +209,10 @@ public:
 		if (Read(OldSize) && (Data + OldSize <= End || AllowTruncated)) { // very permissive about wrong sizes
 			if (CONST LPCBYTE Props = Skip(5)) {
 				DWORD Size, Large;
-				if (Read(Size) && Size && Read(Large) && !Large) {
-					if (Buf = new(std::nothrow) BYTE[Size]) {
-						if (LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5) != SZ_ERROR_DATA) {
-							Unmap();
-							return BOOL(End = (Data = Buf) + Size);
-						}
+				if (Read(Size) && Size && Read(Large) && !Large && (Buf = new(std::nothrow) BYTE[Size])) {
+					INT Error = LzmaUncompress(Buf, &Size, Data, &(OldSize = End - Data), Props, 5);
+					if (!Error || (Error == SZ_ERROR_INPUT_EOF && AllowTruncated)) {
+						return Unmap(), BOOL(End = (Data = Buf) + Size);
 					}
 				}
 			}
@@ -247,28 +237,25 @@ public:
 		return deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) == Z_OK && BufferedFile::Create(FileName);
 	}
 	BOOL Save() {
-		while (deflate(this, Z_FINISH) != Z_STREAM_END) {
-			if (avail_out || !File::Write(next_out = Buffer, avail_out = sizeof(Buffer))) {
-				Delete(DeleteName);
-				return FALSE;
+		do {
+			if (deflate(this, Z_FINISH) == Z_STREAM_END) {
+				if (File::Write(Buffer, sizeof(Buffer) - avail_out) && File::Save()) {
+					return TRUE;
+				}
+				break;
 			}
-		}
-		if (!File::Write(Buffer, sizeof(Buffer) - avail_out) || !File::Save()) {
-			Delete(DeleteName);
-			return FALSE;
-		}
-		return TRUE;
+		} while (!avail_out && File::Write(next_out = Buffer, avail_out = sizeof(Buffer)));
+		return Delete(DeleteName), FALSE;
 	}
 	BOOL Write(CONST LPCVOID Src, CONST DWORD Size) {
 		next_in = LPBYTE(Src);
 		avail_in = Size;
-		do {
-			if (deflate(this, Z_NO_FLUSH) != Z_OK || (!avail_out && !File::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
-				Delete(DeleteName);
-				return FALSE;
+		while (deflate(this, Z_NO_FLUSH) == Z_OK && (avail_out || File::Write(next_out = Buffer, avail_out = sizeof(Buffer)))) {
+			if (!avail_in) {
+				return TRUE;
 			}
-		} while (avail_in);
-		return TRUE;
+		}
+		return Delete(DeleteName), FALSE;
 	}
 	template <typename TYPE> BOOL Write(CONST TYPE Src) {
 		return Write(&Src, sizeof(TYPE));
