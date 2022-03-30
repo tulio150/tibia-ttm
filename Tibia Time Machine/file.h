@@ -48,24 +48,55 @@ public:
 	}
 };
 
-class WritingFile {
+struct bad_open : public exception {};
+struct bad_read : public exception {};
+struct bad_create : public exception {};
+struct bad_write: public exception {};
+
+class ReadingFile {
 protected:
 	HANDLE Handle;
-	LPCTSTR DeleteName;
 
-	VOID Delete() CONST {
-		HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile");
-		if (!CloseHandle(ReOpenFile ? ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE) : CreateFile(DeleteName, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_DELETE_ON_CLOSE, NULL))) {
-			DeleteFile(DeleteName);
-			SetFilePointer(Handle, 0, NULL, FILE_BEGIN);
-			SetEndOfFile(Handle);
-		}
-		throw exception();
+	DWORD GetSize() CONST {
+		LARGE_INTEGER Size;
+		return GetFileSizeEx(Handle, &Size) ? Size.HighPart ? INVALID_FILE_SIZE : Size.LowPart : 0;
 	}
 
 public:
-	WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)), DeleteName(FileName) {
-		if (Handle == INVALID_HANDLE_VALUE) throw exception();
+	ReadingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
+	}
+	~ReadingFile() {
+		CloseHandle(Handle);
+	}
+
+	VOID Skip(CONST DWORD Size) CONST {
+		LARGE_INTEGER Position = { Size, 0 };
+		if (!SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT)) throw bad_read();
+	}
+	VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
+		DWORD Read;
+		if (!ReadFile(Handle, Dest, Size, &Read, NULL) || Read != Size) throw bad_read();
+	}
+	template <typename TYPE> VOID Read(TYPE& Dest) CONST {
+		Read(&Dest, sizeof(TYPE));
+	}
+};
+
+class WritingFile {
+protected:
+	HANDLE Handle;
+
+	VOID Delete() CONST {
+		if (HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
+			ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE);
+		}
+		throw bad_write();
+	}
+
+public:
+	WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_create();
 	}
 	~WritingFile() {
 		CloseHandle(Handle);
@@ -236,9 +267,7 @@ public:
 		zfree = Z_NULL;
 		next_out = Buffer;
 		avail_out = sizeof(Buffer);
-		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK) {
-			Delete();
-		}
+		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK) Delete();
 	}
 	~GzipBufferedFile() {
 		deflateEnd(this);

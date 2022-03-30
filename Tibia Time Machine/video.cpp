@@ -167,6 +167,7 @@ namespace Video {
 			Changed = FALSE;
 		}
 		catch (exception &e) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		return NULL;
@@ -505,12 +506,10 @@ namespace Video {
 			DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 			for (Current = First; Current = Current->Next; Packets++) {
 				if (Packets == INFINITE) {
-					DeleteFile(FileName);
 					throw exception();
 				}
 				CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
 				if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) {
-					DeleteFile(FileName);
 					throw exception();
 				}
 				MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -544,6 +543,7 @@ namespace Video {
 			Changed = FALSE;
 		}
 		catch (exception& e) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		return NULL;
@@ -669,6 +669,7 @@ namespace Video {
 			Changed = FALSE;
 		}
 		catch (exception& e) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		return NULL;
@@ -740,7 +741,6 @@ namespace Video {
 			DWORD Packets = 1;
 			for (Current = First; Current = Current->Next; Packets++) {
 				if (Packets == INFINITE) {
-					DeleteFile(FileName);
 					throw exception();
 				}
 			}
@@ -762,6 +762,7 @@ namespace Video {
 			Changed = FALSE;
 		}
 		catch (exception& e) {
+			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
 		return NULL;
