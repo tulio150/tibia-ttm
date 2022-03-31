@@ -714,7 +714,7 @@ namespace Video {
 			return ErrorBox(ERROR_FILE_NOT_EXISTS, TITLE_OPEN_VIDEO);
 		}
 		MainWnd::Progress_Start();
-		if (CONST UINT Error = Open(FILETYPE_ALL, GetKeyState(VK_SHIFT) < 0, MainWnd::Handle)) {
+		if (CONST UINT Error = Open(DetectFormat(), GetKeyState(VK_SHIFT) < 0, MainWnd::Handle)) {
 			ErrorBox(Error, TITLE_OPEN_VIDEO);
 		} //TODO: open exe, detect custom client and import accordingly
 		if (Last) {
@@ -739,7 +739,7 @@ namespace Video {
 				CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 			}
 			MainWnd::Progress_Segment = i;
-			if (CONST UINT Error = Open(FILETYPE_ALL, Override, MainWnd::Handle)) {
+			if (CONST UINT Error = Open(DetectFormat(), Override, MainWnd::Handle)) {
 				LPCTSTR ErrorFile = PathFindFileName(FileName);
 				SIZE_T FileSize = _tcslen(ErrorFile);
 				if (Pos) {

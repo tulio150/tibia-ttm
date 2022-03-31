@@ -119,8 +119,8 @@ class MappedFile : private ReadingFile {
 
 	static LONG WINAPI ExceptionFilter(EXCEPTION_POINTERS* Info) {
 		if (Info->ExceptionRecord->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) {
-			if (Info->ExceptionRecord->NumberParameters > 2) {
-				if (!Info->ExceptionRecord->ExceptionInformation[0]) {
+			if (Info->ExceptionRecord->NumberParameters > 1) {
+				if (Info->ExceptionRecord->ExceptionInformation[0] == EXCEPTION_READ_FAULT) {
 					throw bad_alloc();
 				}
 			}
