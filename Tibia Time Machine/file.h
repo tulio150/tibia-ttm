@@ -176,6 +176,7 @@ public:
 	}
 };
 
+#define SZ_OK 0
 #define SZ_ERROR_MEM 2
 #define SZ_ERROR_INPUT_EOF 6
 extern "C" { // Modded LzmaLib for compression progress
@@ -227,13 +228,15 @@ public:
 
 	inline VOID Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize = Read<DWORD>();
-		if (Data + OldSize > End && !AllowTruncated) throw bad_open(); // very permissive about wrong sizes
+		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size = Read<DWORD>();
 		DWORD Large = Read<DWORD>();
-		if (!Size || Large) throw bad_open();
-		INT Error = LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &(OldSize = End - Data), Props, 5);
-		if (Error && (!AllowTruncated || Error != SZ_ERROR_INPUT_EOF)) throw bad_open();
+		if (!Size || Large) throw bad_read();
+		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &(OldSize = End - Data), Props, 5)) {
+			if (!OldSize) throw bad_alloc();
+			if (!Size || !AllowTruncated) throw bad_read();
+		}
 		End = (Data = Buf) + Size;
 		Unmap();
 	}
