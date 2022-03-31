@@ -176,9 +176,6 @@ public:
 	}
 };
 
-#define SZ_OK 0
-#define SZ_ERROR_MEM 2
-#define SZ_ERROR_INPUT_EOF 6
 extern "C" { // Modded LzmaLib for compression progress
 	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
 	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPCVOID Callback);
@@ -230,10 +227,10 @@ public:
 		DWORD OldSize = Read<DWORD>();
 		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
-		DWORD Size = Read<DWORD>();
-		DWORD Large = Read<DWORD>();
-		if (!Size || Large) throw bad_read();
-		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &(OldSize = End - Data), Props, 5)) {
+		DWORD Size = Read <DWORD>();
+		DWORD Large = Read <DWORD>();
+		if (!Size || Large || !(OldSize = End - Data)) throw bad_read();
+		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &OldSize, Props, 5)) {
 			if (!OldSize) throw bad_alloc();
 			if (!Size || !AllowTruncated) throw bad_read();
 		}
