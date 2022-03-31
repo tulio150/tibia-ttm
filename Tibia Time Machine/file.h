@@ -187,7 +187,10 @@ class LzmaBufferedFile : private WritingFile {
 	LPBYTE Data;
 
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) : WritingFile(FileName), Skip(Header + 17), Buf(new BYTE[Size * 2 + Skip]), Data(Buf + Size) {}
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) : WritingFile(FileName), Skip(Header + 17), Buf(NULL) {
+		if (!(Buf = new(nothrow) BYTE[Size * 2 + Skip])) Delete();
+		Data = Buf + Size + Skip;
+	}
 	inline ~LzmaBufferedFile() {
 		delete[] Buf;
 	}
@@ -256,8 +259,8 @@ public:
 			if (avail_out) Delete();
 			WritingFile::Write(next_out = Buffer, avail_out = sizeof(Buffer));
 		}
-		WritingFile::Write(Buffer, sizeof(Buffer) - avail_out);
-		WritingFile::Save();
+		Pos = sizeof(Buffer) - avail_out;
+		BufferedFile::Save();
 	}
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		next_in = LPBYTE(Src);
