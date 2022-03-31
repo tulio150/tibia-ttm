@@ -274,7 +274,7 @@ namespace Video {
 					if (Parser->EnterGame) {
 						if (!Parser->FixEnterGame(*this)) throw bad_alloc();
 						if (Current) {
-							if (1000 > INFINITE - Current->Time) throw bad_write(); // hack to show custom append error
+							if (1000 > INFINITE - Current->Time) throw bad_alloc();
 							Current->EndSession();
 							Current = Current->Next = new Session(*this, Current);
 						}
@@ -321,9 +321,9 @@ namespace Video {
 		NeedParser ToSave;
 		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
-			if (Packets == INFINITE) throw bad_open();
+			if (Packets == INFINITE) throw bad_alloc();
 			CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
-			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) throw bad_open();
+			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) throw bad_alloc();
 		}
 		LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
 		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
@@ -444,7 +444,7 @@ namespace Video {
 	VOID SaveREC() {
 		DWORD Packets = 1;
 		for (Current = First; Current = Current->Next; Packets++) {
-			if (Packets == INFINITE) throw bad_open();
+			if (Packets == INFINITE) throw bad_alloc();
 		}
 		NeedParser ToSave;
 		BufferedFile File(FileName);
@@ -499,12 +499,12 @@ namespace Video {
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw bad_open();
+				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw bad_alloc();
 				CONST DWORD AesMode = CRYPT_MODE_ECB;
 				if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
 					CryptDestroyKey(RecKey);
 					RecKey = NULL;
-					throw bad_open();
+					throw bad_alloc();
 				}
 			}
 			for (DWORD i = 0; i < Packets; i++) {
@@ -634,7 +634,7 @@ namespace Video {
 			case FILETYPE_ALL: return Save(DetectFormat(), Override, Parent);
 			}
 		}
-		catch (exception&) {
+		catch (bad_alloc&) {
 			DeleteFile(FileName);
 			return ERROR_CANNOT_SAVE_VIDEO_FILE;
 		}
@@ -652,20 +652,13 @@ namespace Video {
 			case FILETYPE_ALL: return Open(DetectFormat(), Override, Parent);
 			}
 		}
-		catch (bad_write&) {
-			CancelOpen(Override);
-			return ERROR_CANNOT_APPEND;
-		}
-		catch (bad_read&) {
-			CancelOpen(Override);
-			return ERROR_CORRUPT_VIDEO;
-		}
 		catch (bad_alloc&) {
 			CancelOpen(Override);
 			return ERROR_CANNOT_OPEN_VIDEO_FILE;
 		}
-		catch (bad_open&) {
-			return ERROR_CANNOT_OPEN_VIDEO_FILE;
+		catch (bad_read&) {
+			CancelOpen(Override);
+			return ERROR_CORRUPT_VIDEO;
 		}
 		catch (int e) {
 			return e;

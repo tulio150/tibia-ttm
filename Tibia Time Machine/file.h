@@ -2,10 +2,6 @@
 #include "framework.h"
 #include "zlib.h"
 
-struct bad_open : public exception {};
-struct bad_write: public exception {};
-struct bad_read : public exception {};
-
 class WritingFile {
 protected:
 	HANDLE Handle;
@@ -14,16 +10,16 @@ protected:
 		if (HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
 			ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE);
 		}
-		throw bad_write();
+		throw bad_alloc();
 	}
 
 public:
 	inline WritingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
-		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_alloc();
 	}
-	inline WritingFile(CONST LPCTSTR FileName, CONST DWORD Seek) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
-		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
-		SetFilePointer(Handle, 0, NULL, Seek);
+	inline WritingFile(CONST LPCTSTR FileName, CONST DWORD Start) : Handle(CreateFile(FileName, FILE_WRITE_DATA | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_alloc();
+		SetFilePointer(Handle, 0, NULL, Start);
 	}
 	inline ~WritingFile() {
 		CloseHandle(Handle);
@@ -41,6 +37,8 @@ public:
 	}
 };
 
+struct bad_read : public exception {};
+
 class ReadingFile {
 protected:
 	HANDLE Handle;
@@ -52,7 +50,7 @@ protected:
 
 public:
 	inline ReadingFile(CONST LPCTSTR FileName) : Handle(CreateFile(FileName, FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL)) {
-		if (Handle == INVALID_HANDLE_VALUE) throw bad_open();
+		if (Handle == INVALID_HANDLE_VALUE) throw bad_alloc();
 	}
 	inline ~ReadingFile() {
 		CloseHandle(Handle);
@@ -67,7 +65,8 @@ public:
 	}
 	inline VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
 		DWORD Read;
-		if (!ReadFile(Handle, Dest, Size, &Read, NULL)  || Read!= Size) throw bad_read();
+		if (!ReadFile(Handle, Dest, Size, &Read, NULL)) throw bad_alloc();
+		if (Read != Size) throw bad_read();
 	}
 	template <typename TYPE> inline VOID Read(TYPE& Dest) CONST {
 		Read(&Dest, sizeof(TYPE));
@@ -142,12 +141,12 @@ protected:
 public:
 	inline MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) {
 		CONST DWORD Size = GetSize();
-		if (!Size) throw bad_open();
+		if (!Size) throw bad_alloc();
 		CONST HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL);
-		if (!Map) throw bad_open();
+		if (!Map) throw bad_alloc();
 		Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size);
 		CloseHandle(Map);
-		if (!Ptr) throw bad_open();
+		if (!Ptr) throw bad_alloc();
 		End = (Data = LPCBYTE(Ptr)) + Size;
 		Filter = AddVectoredExceptionHandler(FALSE, ExceptionFilter);
 	}
@@ -278,7 +277,7 @@ public:
 	inline GzipMappedFile(CONST LPCTSTR FileName) : MappedFile(FileName) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
-		if (inflateInit2(this, MAX_WBITS + 16) != Z_OK) throw bad_open();
+		if (inflateInit2(this, MAX_WBITS + 16) != Z_OK) throw bad_alloc();
 		next_in = LPBYTE(Data);
 		avail_in = End - Data;
 		avail_out = 0;
