@@ -235,7 +235,7 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, TotalTime);
 		}
-		if (Current->Time != TotalTime) throw bad_read();
+		if (Current->Time != TotalTime && !Override) throw bad_read();
 	}
 
 	Packet*& Started() {
@@ -511,9 +511,8 @@ namespace Video {
 				WORD Size = File.Read<WORD>();
 				File.Read(Src.Time);
 				CONST LPCBYTE Encrypted = File.Skip(Size);
+				if (File.Read<DWORD>() != adler32(1, Encrypted, Size) && !Override) throw bad_read();
 				BYTE Data[0xFFFF];
-				DWORD Checksum = File.Read<DWORD>();
-				if (Checksum != adler32(1, Encrypted, Size) && !Override) throw bad_read();
 				CHAR Key = Size + Src.Time - 31, Rem;
 				for (WORD i = 0; i < Size; i++) {
 					if ((Rem = (Key += 33) % Mod) > 0) {
