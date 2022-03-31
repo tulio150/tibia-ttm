@@ -222,20 +222,23 @@ namespace Proxy {
 	WORD Port = FALSE;
 
 	BOOL Start() {
-		if (!Login.Open(WM_SOCKET_LOGINSERVER)) {
-			return FALSE;
+		try {
+			Parser->Start(Tibia::Version);
+			if (Login.Open(WM_SOCKET_LOGINSERVER)) {
+				if (Game.Open(WM_SOCKET_GAMESERVER)) {
+					return TRUE;
+				}
+				Login.Close();
+			}
+			Parser->Stop();
 		}
-		if (!Game.Open(WM_SOCKET_GAMESERVER)) {
-			Login.Close();
-			return FALSE;
-		}
-		Parser->Start(Tibia::Version);
-		return TRUE;
+		catch (bad_alloc&) {}
+		return FALSE;
 	}
 	VOID Stop() {
-		Parser->Stop();
 		Game.Close();
 		Login.Close();
+		Parser->Stop();
 	}
 
 	VOID HandleTibiaClosed() {

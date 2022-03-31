@@ -273,7 +273,7 @@ namespace Tibia {
 		try {
 			ReadingFile(Path).Read(Signatures[Index]);
 		}
-		catch (exception& e) {
+		catch (exception&) {
 			return FALSE;
 		}
 		return TRUE;

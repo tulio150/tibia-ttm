@@ -1029,7 +1029,7 @@ namespace Video {
 		if (Last && 1000 > INFINITE - Last->Time || !Parser->FixEnterGame(Proxy::Server)) {
 			return Proxy::Server.Discard();
 		}
-		if (!(Current = Last ? Last->Next = new(nothrow) Session(Proxy::Server, Last) : First = new(nothrow) Session(Proxy::Server))) {
+		if (!(Current = (Last ? Last->Next = new(nothrow) Session(Proxy::Server, Last) : First = new(nothrow) Session(Proxy::Server)))) {
 			return Proxy::Server.Discard();
 		}
 		Timer::Start();

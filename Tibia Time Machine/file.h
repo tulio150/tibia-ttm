@@ -114,7 +114,19 @@ public:
 };
 
 class MappedFile : private ReadingFile {
+	LPVOID Filter;
 	LPCVOID Ptr;
+
+	static LONG WINAPI ExceptionFilter(EXCEPTION_POINTERS* Info) {
+		if (Info->ExceptionRecord->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) {
+			if (Info->ExceptionRecord->NumberParameters > 2) {
+				if (!Info->ExceptionRecord->ExceptionInformation[0]) {
+					throw bad_alloc();
+				}
+			}
+		}
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
 
 protected:
 	LPCBYTE Data;
@@ -135,8 +147,10 @@ public:
 		CloseHandle(Map);
 		if (!Ptr) throw bad_open();
 		End = (Data = LPCBYTE(Ptr)) + Size;
+		Filter = AddVectoredExceptionHandler(FALSE, ExceptionFilter);
 	}
 	~MappedFile() {
+		RemoveVectoredExceptionHandler(Filter);
 		UnmapViewOfFile(Ptr);
 	}
 
