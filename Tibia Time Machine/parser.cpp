@@ -1620,6 +1620,7 @@ BOOL Parser700::FixTrade(PacketBase &Src) CONST {
 		LPBYTE Trash = LPBYTE(&Src);
 		CONST PacketData *Old = GetPacketData(Src);
 		if (!AllocPacket(Src, Old->Size + 1)) {
+			Src.Set(Trash);
 			return FALSE;
 		}
 		GetByte() = 0x7F;
@@ -1633,6 +1634,7 @@ BOOL Parser980::FixEnterGame(PacketBase& Src) CONST{
 		LPBYTE Trash = LPBYTE(&Src);
 		CONST PacketData *Old = GetPacketData(Src);
 		if (!AllocPacket(Src, Old->Size + 24)) {
+			Src.Set(Trash);
 			return FALSE;
 		}
 		GetByte() = 0x17;
@@ -1653,6 +1655,7 @@ BOOL Parser1054::FixEnterGame(PacketBase& Src) CONST {
 		LPBYTE Trash = LPBYTE(&Src);
 		CONST PacketData *Old = GetPacketData(Src);
 		if (!AllocPacket(Src, Old->Size + 25)) {
+			Src.Set(Trash);
 			return FALSE;
 		}
 		GetByte() = 0x17;
@@ -1674,6 +1677,7 @@ BOOL Parser1058::FixEnterGame(PacketBase& Src) CONST {
 		LPBYTE Trash = LPBYTE(&Src);
 		CONST PacketData*Old = GetPacketData(Src);
 		if (!AllocPacket(Src, Old->Size + 26)) {
+			Src.Set(Trash);
 			return FALSE;
 		}
 		GetByte() = 0x17;
@@ -1696,6 +1700,7 @@ BOOL Parser1080::FixEnterGame(PacketBase& Src) CONST {
 		LPBYTE Trash = LPBYTE(&Src);
 		CONST PacketData *Old = GetPacketData(Src);
 		if (!AllocPacket(Src, Old->Size + 30 + Store.Len)) {
+			Src.Set(Trash);
 			return FALSE;
 		}
 		GetByte() = 0x17;

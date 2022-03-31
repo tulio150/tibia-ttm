@@ -19,13 +19,12 @@ struct PacketData {
 
 class PacketBase {
 protected:
-	PacketData *P;
-public:
-	PacketBase(): P(NULL) {}
+	PacketData* P;
 
-	PacketData *operator->() CONST { return P; }
-	PacketData *operator&() CONST{ return P;  }
-	BOOL operator!() CONST{ return !P; }
+	PacketBase(PacketBase& Src) : P(Src.P) { Src.P = NULL; }
+
+public:
+	PacketBase() : P(NULL) {}
 
 	VOID Set(CONST LPBYTE New) {
 		P = (PacketData*)New;
@@ -40,14 +39,14 @@ public:
 		delete[] LPBYTE(P);
 		P = NULL;
 	}
-	VOID Record(PacketBase &Src) {
-		P = Src.P;
-		Src.P = NULL;
-	}
-	VOID Copy(CONST PacketBase &Src) {
+	VOID Copy(CONST PacketBase& Src) {
 		Alloc(Src.P->Size);
 		if (P) {
 			P->Copy(Src.P->Data);
 		}
 	}
+
+	PacketData* operator->() CONST { return P; }
+	PacketData* operator&() CONST { return P; }
+	BOOL operator!() CONST { return !P; }
 };

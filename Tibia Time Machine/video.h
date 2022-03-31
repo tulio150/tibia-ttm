@@ -19,7 +19,7 @@ namespace Video {
 		Packet *Next;
 		Session *Login;
 
-		Packet(CONST Packet *CONST Previous, CONST WORD Delay): Time(Previous->Time + Delay), Next(NULL), Login(Previous->Login) {}
+		Packet(PacketBase& Src, CONST Packet *CONST Previous, CONST WORD Delay): PacketBase(Src), Time(Previous->Time + Delay), Next(NULL), Login(Previous->Login) {}
 		~Packet() {
 			delete[] LPBYTE(P);
 		}
@@ -33,8 +33,8 @@ namespace Video {
 		BOOL NeedEncrypt();
 		BOOL NeedDecrypt();
 	protected:
-		Packet(): Time(0), Next(NULL), Login((Session *) this) {}
-		Packet(CONST Packet *CONST Previous): Time(Previous->Time + 1000), Next(NULL), Login((Session *) this) {}
+		Packet(PacketBase& Src): PacketBase(Src), Time(0), Next(NULL), Login((Session *) this) {}
+		Packet(PacketBase& Src, CONST Packet *CONST Previous): PacketBase(Src), Time(Previous->Time + 1000), Next(NULL), Login((Session *) this) {}
 	};
 
 	struct Session: public Packet {
@@ -43,8 +43,8 @@ namespace Video {
 		Packet *Last;
 		DWORD PlayerID;
 
-		Session(): Packet(), Encrypt(this), Prev(NULL), PlayerID(Parser->PlayerID) {}
-		Session(Packet *CONST Previous): Packet(Previous), Encrypt(this), Prev(Previous), PlayerID(Parser->PlayerID) {}
+		Session(PacketBase& Src): Packet(Src), Encrypt(this), Prev(NULL), PlayerID(Parser->PlayerID) {}
+		Session(PacketBase& Src, Packet *CONST Previous): Packet(Src, Previous), Encrypt(this), Prev(Previous), PlayerID(Parser->PlayerID) {}
 
 		DWORD SessionTime() CONST {
 			return Last->Time - Time;

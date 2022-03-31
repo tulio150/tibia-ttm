@@ -58,22 +58,16 @@ public:
 		CloseHandle(Handle);
 	}
 
-	BOOL Peek(CONST DWORD Size) CONST {
-		LARGE_INTEGER Position = { Size, 0 };
-		return SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT);
-	}
-	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) CONST {
-		DWORD Read;
-		return ReadFile(Handle, Dest, Size, &Read, NULL) && Read == Size;
-	}
-	template <typename TYPE> BOOL Peek(TYPE& Dest) CONST {
-		return Peek(&Dest, sizeof(TYPE));
+	BOOL Peek() CONST {
+		return SetFilePointer(Handle, 0, NULL, SEEK_CUR) < GetSize();
 	}
 	VOID Skip(CONST DWORD Size) CONST {
-		if (!Peek(Size)) throw bad_read();
+		LARGE_INTEGER Position = { Size, 0 };
+		if (!SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT)) throw bad_read();
 	}
 	VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
-		if (!Peek(Dest, Size)) throw bad_read();
+		DWORD Read;
+		if (!ReadFile(Handle, Dest, Size, &Read, NULL)  || Read!= Size) throw bad_read();
 	}
 	template <typename TYPE> VOID Read(TYPE& Dest) CONST {
 		Read(&Dest, sizeof(TYPE));
@@ -146,20 +140,13 @@ public:
 		UnmapViewOfFile(Ptr);
 	}
 
-	LPCBYTE Peek(CONST DWORD Size) {
-		LPCBYTE Result = Data;
-		return ((Data += Size) <= End) ? Result : NULL;
-	}
-	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) {
-		LPCBYTE Src = Peek(Size);
-		return Src ? BOOL(CopyMemory(Dest, Src, Size)) : FALSE;
-	}
-	template <typename TYPE> BOOL Peek(TYPE& Dest) {
-		return Peek(&Dest, sizeof(TYPE));
+	BOOL Peek() {
+		return Data < End;
 	}
 	LPCBYTE Skip(CONST DWORD Size) {
-		if (LPCBYTE Result = Peek(Size)) return Result;
-		throw bad_read();
+		LPCBYTE Src = Data;
+		if ((Data += Size) > End) throw bad_read();
+		return Src;
 	}
 	VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
 		CopyMemory(Dest, Skip(Size), Size);
@@ -224,17 +211,15 @@ public:
 
 	VOID Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize = Read<DWORD>();
-		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
+		if (Data + OldSize > End && !AllowTruncated) throw bad_open(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
-		DWORD Size = Read<DWORD>(), Large = Read<DWORD>();
-		if (!Size || Large) throw bad_read();
+		DWORD Size = Read<DWORD>();
+		DWORD Large = Read<DWORD>();
+		if (!Size || Large) throw bad_open();
 		INT Error = LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &(OldSize = End - Data), Props, 5);
-		if (Error && (!AllowTruncated || Error != SZ_ERROR_INPUT_EOF)) {
-			if (Error == SZ_ERROR_MEM) throw bad_alloc();
-			else throw bad_read();
-		}
-		Unmap();
+		if (Error && (!AllowTruncated || Error != SZ_ERROR_INPUT_EOF)) throw bad_open();
 		End = (Data = Buf) + Size;
+		Unmap();
 	}
 };
 
@@ -243,9 +228,9 @@ public:
 	GzipBufferedFile(CONST LPCTSTR FileName) : BufferedFile(FileName) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
+		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK) Delete();
 		next_out = Buffer;
 		avail_out = sizeof(Buffer);
-		if (deflateInit2(this, Z_DEFAULT_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK) Delete();
 	}
 	~GzipBufferedFile() {
 		deflateEnd(this);
@@ -277,24 +262,23 @@ public:
 	GzipMappedFile(CONST LPCTSTR FileName) : MappedFile(FileName) {
 		zalloc = Z_NULL;
 		zfree = Z_NULL;
+		if (inflateInit2(this, MAX_WBITS + 16) != Z_OK) throw bad_open();
 		next_in = LPBYTE(Data);
 		avail_in = End - Data;
-		if (inflateInit2(this, MAX_WBITS + 16) != Z_OK) throw bad_open();
+		avail_out = 0;
 	}
 	~GzipMappedFile() {
 		inflateEnd(this);
 	}
 
-	BOOL Peek(CONST LPVOID Dest, CONST DWORD Size) {
-		next_out = LPBYTE(Dest);
-		avail_out = Size;
-		return inflate(this, Z_SYNC_FLUSH) >= Z_OK && !avail_out;
-	}
-	template <typename TYPE> BOOL Peek(TYPE& Dest) {
-		return Peek(&Dest, sizeof(TYPE));
+	BOOL Peek() {
+		return inflate(this, Z_NO_FLUSH) != Z_STREAM_END;
 	}
 	VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
-		if (!Peek(Dest, Size)) throw bad_read();
+		next_out = LPBYTE(Dest);
+		avail_out = Size;
+		if (inflate(this, Z_SYNC_FLUSH) < Z_OK) throw bad_alloc();
+		if (avail_out) throw bad_read();
 	}
 	template <typename TYPE> VOID Read(TYPE& Dest) {
 		Read(&Dest, sizeof(TYPE));
