@@ -77,8 +77,10 @@ namespace Proxy {
 
 		BOOL GetWorldname();
 		BOOL SendWorldname();
+		VOID Construct(PacketData *CONST New);
+		VOID Discard();
 		BOOL GetPacket();
-		BOOL SendPacket(CONST PacketBase &Packet);
+		BOOL SendPacket(CONST PacketData* CONST Packet);
 	};
 
 	extern ListenSocket Login;
@@ -93,7 +95,7 @@ namespace Proxy {
 
 	VOID HandleTibiaClosed();
 
-	BOOL SendConstructed();
+	VOID SendConstructed();
 	BOOL SendClientMessage(CONST BYTE Type, CONST UINT Error);
 
 	VOID HandleClientClose();

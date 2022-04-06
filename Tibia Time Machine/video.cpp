@@ -6,7 +6,7 @@
 #include "loader.h"
 
 #define CAM_HASH "TTM created CAM file - no hash."
-#define BIGDELAY 0xFFFF
+#define BIGDELAY 60000
 #define IDLETIME 10000
 #define PAUSED (-4)
 #define LIGHTSPEED 10
@@ -36,36 +36,21 @@ namespace Video {
 
 #define CurrentLogin ((Session *) Current)
 
+	HANDLE Packet::NewHeap;
+	VOID Packet::operator delete(LPVOID Ptr) {
+		HeapFree(((Packet*)Ptr)->Login->Heap, NULL, Ptr);
+	}
 	VOID Packet::EndSession()  {
 		Login->Last = this;
 	}
 	VOID Packet::CutSession() {
 		((Session *)Next)->Prev = this;
 	}
-
 	DWORD Packet::TimeInSession() CONST {
 		return Time - Login->Time;
 	}
 	BOOL Packet::IsLast() CONST {
 		return this == Login->Last;
-	}
-	BOOL Packet::NeedEncrypt() {
-		if (this == Login->Encrypt) {
-			Login->Encrypt = Next;
-			return TRUE;
-		}
-		return FALSE;
-	}
-	BOOL Packet::NeedDecrypt() {
-		if (this == Login->Encrypt) {
-			Current = Login->Last;
-			Login->Encrypt = Login;
-			return FALSE;
-		}
-		if (this == Login->Last) {
-			Login->Encrypt = Login;
-		}
-		return TRUE;
 	}
 
 	namespace Timer {
@@ -117,8 +102,8 @@ namespace Video {
 			File.Write(Tibia::Port);
 		}
 		File.Write(Last->Time);
-		PacketData* Packet = Parser->GetPacketData(*(Current = First));
-		File.Write(Packet, Packet->RawSize());
+		Current = First;
+		File.Write(&(*Current), (*Current)->RawSize());
 		MainWnd::Progress_Set(0, Last->Time);
 		while (Current->Next) {
 			if (Current->IsLast()) {
@@ -128,14 +113,17 @@ namespace Video {
 				File.Write(BYTE(FALSE));
 				File.Write(WORD(Current->Next->Time - Current->Time));
 			}
-			Packet = Parser->GetPacketData(*(Current = Current->Next));
-			File.Write(Packet, Packet->RawSize());
+			Current = Current->Next;
+			File.Write(&(*Current), (*Current)->RawSize());
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		File.Save();
 	}
 
 	VOID BeforeOpen(BOOL &Override, CONST HWND Parent, CONST WORD Version, CONST BYTE HostLen, CONST LPCSTR Host, CONST WORD Port) {
+		if (HostLen) {
+			if (!Port || HostLen > 127 || !Tibia::VerifyHost(Host, HostLen)) throw ERROR_CORRUPT_VIDEO;
+		}
 		if (Override) {
 			if (!Last && !Tibia::Running) {
 				Tibia::SetHost(Version, HostLen, Host, Port);
@@ -171,16 +159,10 @@ namespace Video {
 	}
 
 	struct FilePacket : private NeedParser, PacketBase {
-		~FilePacket() {
-			delete[] LPBYTE(P);
-		}
-
 		BOOL Read(MappedFile& File) {
-			CONST WORD Size = File.Read<WORD>();
-			if (!Size) return FALSE;
-			CONST LPBYTE Data = Parser->AllocPacket(*this, Size);
-			if (!Data) throw bad_alloc();
-			File.Read(Data, Size);
+			if (!(P = (PacketData *) &File.Read<WORD>())->Size) return FALSE;
+			File.Skip(P->Size);
+			Parser->SetPacket(P);
 			return Parser->GetPacketType();
 		}
 	};
@@ -188,48 +170,41 @@ namespace Video {
 	VOID OpenTTM(BOOL Override, CONST HWND Parent) {
 		MappedFile File(FileName);
 		WORD Version = File.Read<WORD>();
-		BYTE HostLen = File.Read<BYTE>();
-		if (HostLen > 127) throw ERROR_CORRUPT_VIDEO;
+		BYTE HostLen;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
-		if (HostLen) {
+		if (File.Read(HostLen)) {
 			Host = LPCSTR(File.Skip(HostLen));
 			File.Read(Port);
-			if (!Port || !Tibia::VerifyHost(Host, HostLen)) throw ERROR_CORRUPT_VIDEO;
 		}
 		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
 		DWORD TotalTime = File.Read<DWORD>();
 		FilePacket Src;
 		if (!Src.Read(File) || !Parser->PlayerData) throw ERROR_CORRUPT_VIDEO;
 		if (!Parser->EnterGame) { // videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
-			Src.Discard();
 			if (!Parser->Pending || !Src.Read(File) || !Parser->EnterGame || Parser->PlayerData) throw ERROR_CORRUPT_VIDEO;
 		}
-		if (!Parser->FixEnterGame(Src)) throw bad_alloc();
 		if (Last) {
 			if (TotalTime > INFINITE - 1000 || TotalTime + 1000 > INFINITE - Last->Time) throw ERROR_CANNOT_APPEND;
 			TotalTime += Last->Time + 1000;
-			Current = Last->Next = new Session(Src, Last);
+			Current = Last->Next = new(&Src) Session(Last);
 		}
 		else {
-			Current = First = new Session(Src);
+			Current = First = new(&Src) Session();
 		}
 		while (File.Peek()) {
 			WORD Delay;
 			switch (File.Read<BYTE>()) {
 			case TRUE:
 				if (1000 > TotalTime - Current->Time) throw bad_read();
-				Current->EndSession();
 				if (!Src.Read(File) || !Parser->EnterGame) throw bad_read();
-				if (!Parser->FixEnterGame(Src)) throw bad_alloc();
-				Current = Current->Next = new Session(Src, Current);
+				Current->EndSession();
+				Current = Current->Next = new(&Src) Session(Current);
 				break;
 			case FALSE:
-				File.Read(Delay);
-				if (Delay > TotalTime - Current->Time) throw bad_read();
+				if (File.Read(Delay) > TotalTime - Current->Time) throw bad_read();
 				if (!Src.Read(File) || Parser->EnterGame || Parser->Pending || Parser->PlayerData) throw bad_read();
-				if (!Parser->FixTrade(Src)) throw bad_alloc();
-				Current = Current->Next = new Packet(Src, Current, Delay);
+				Current = Current->Next = new(&Src) Packet(Current, Delay);
 				break;
 			default: throw bad_read();
 			}
@@ -253,6 +228,9 @@ namespace Video {
 		Converter(): Store(LPBYTE(&PacketSize)), Want(2) {
 			Current = Last;
 		}
+		~Converter() {
+			Parser->DestroyPacket(P);
+		}
 		VOID Read(LPCBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
@@ -260,8 +238,8 @@ namespace Video {
 				Avail -= Want;
 				if (!P) {
 					if (PacketSize) {
-						Store = Parser->AllocPacket(*this, PacketSize);
-						if (!Store) throw bad_alloc();
+						P = Parser->CreatePacket(PacketSize);
+						Store = P->Data;
 						Want = PacketSize;
 					}
 					else {
@@ -272,22 +250,17 @@ namespace Video {
 				else {
 					if (!Parser->GetPacketType()) throw bad_read();
 					if (Parser->EnterGame) {
-						if (!Parser->FixEnterGame(*this)) throw bad_alloc();
 						if (Current) {
 							if (1000 > INFINITE - Current->Time) throw bad_alloc();
 							Current->EndSession();
-							Current = Current->Next = new Session(*this, Current);
+							Current = Current->Next = new(P) Session(Current);
 						}
 						else {
-							Current = First = new Session(*this);
+							Current = First = new(P) Session();
 						}
 					}
-					else if (Parser->Pending || Parser->PlayerData) {
-						Discard(); // pending packet, just get data (should not exist, but who knwows)
-					}
-					else {
+					else if (!Parser->Pending && !Parser->PlayerData) { // pending packet should not exist here, but who knwows
 						if (!Started()) throw ERROR_CORRUPT_VIDEO; // common packet without a login packet first (usually wrong version selected)
-						if (!Parser->FixTrade(*this)) throw bad_alloc();
 						DWORD Delay = Time - LastTime;
 						if (Delay > BIGDELAY) {
 							Delay = BIGDELAY;
@@ -295,8 +268,10 @@ namespace Video {
 						if (Delay > INFINITE - Current->Time) {
 							Delay = INFINITE - Current->Time;
 						}
-						Current = Current->Next = new Packet(*this, Current, WORD(Delay));
+						Current = Current->Next = new(P) Packet(Current, WORD(Delay));
 					}
+					Parser->DestroyPacket(P);
+					P = NULL;
 					LastTime = Time;
 					Store = LPBYTE(&PacketSize);
 					Want = 2;
@@ -319,10 +294,10 @@ namespace Video {
 	}
 	VOID SaveCAM() {
 		NeedParser ToSave;
-		DWORD Size = Parser->GetPacketData(*First)->RawSize() + 16, Packets = 58;
+		DWORD Size = (*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) throw bad_alloc();
-			CONST DWORD PacketSize = Parser->GetPacketData(*Current)->RawSize();
+			CONST DWORD PacketSize = (*Current)->RawSize();
 			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) throw bad_alloc();
 		}
 		LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
@@ -343,11 +318,10 @@ namespace Video {
 		File.Write(Packets);
 		Current = First;
 		do {
-			PacketData* Packet = Parser->GetPacketData(*Current);
-			File.Write(WORD(Size = Packet->RawSize()));
+			File.Write(WORD(Size = (*Current)->RawSize()));
 			File.Write(Current->Time);
-			File.Write(Packet, Size);
-			File.Write(crc32(0, Packet->Data, Packet->Size));
+			File.Write(&(*Current), Size);
+			File.Write(crc32(0, (*Current)->Data, (*Current)->Size));
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		File.Save(CAMProgressCallback);
@@ -366,20 +340,17 @@ namespace Video {
 				File.Skip(Metadata);
 			}
 			else {
-				if (Metadata < 4 || Metadata > 130) throw ERROR_CORRUPT_VIDEO;
-				File.Read(HostLen);
-				if (HostLen != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
+				if (Metadata < 4 || Metadata > 130 || File.Read(HostLen) != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
 				Host = LPCSTR(File.Skip(HostLen));
 				File.Read(Port);
-				if (!Port || !Tibia::VerifyHost(Host, HostLen)) throw ERROR_CORRUPT_VIDEO;
 			}
 		}
 		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
 		File.Uncompress(Override);
 		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
-		DWORD Packets = File.Read<DWORD>();
-		if (Packets < 58) throw ERROR_CORRUPT_VIDEO;
+		DWORD Packets;
+		if (File.Read(Packets) < 58) throw ERROR_CORRUPT_VIDEO;
 		Packets -= 57;
 		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
 		for (DWORD i = 0; i < Packets; i++) {
@@ -399,18 +370,18 @@ namespace Video {
 		File.Write(Last->Time);
 		File.Write(BYTE(FALSE));
 		File.Write(DWORD(0));
-		PacketData* Packet = Parser->GetPacketData(*(Current = First));
-		WORD Size = Packet->RawSize();
+		Current = First;
+		WORD Size = (*Current)->RawSize();
 		if (Size < 2) Size = 0;
 		File.Write(Size);
-		File.Write(Packet, Size);
+		File.Write(&(*Current), Size);
 		while (Current->Next) {
 			if (Current->IsLast()) File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
 			File.Write(BYTE(FALSE));
 			File.Write(Current->Next->Time - Current->Time);
-			if ((Size = (Packet = Parser->GetPacketData(*(Current = Current->Next)))->RawSize()) < 2) Size = 0;
+			if ((Size = (*Current)->RawSize()) < 2) Size = 0;
 			File.Write(Size);
-			File.Write(Packet, Size);
+			File.Write(&(*Current), Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
 		File.Save();
@@ -423,15 +394,14 @@ namespace Video {
 		Converter Src;
 		Src.Time = 0;
 		while (File.Peek()) {
+			WORD Size;
+			BYTE Data[0xFFFF];
 			switch (File.Read<BYTE>()) {
 			case TRUE: break;
 			case FALSE:
 				Src.Time += File.Read<DWORD>();
-				if (WORD Size = File.Read<WORD>()) { // TMV adds zero-sized packets to delay between merged videos
-					BYTE Data[0xFFFF];
-					File.Read(Data, Size);
-					Src.Read(Data, Size);
-				}
+				File.Read(Data, File.Read(Size));
+				Src.Read(Data, Size);
 				break;
 			default: throw bad_read();
 			}
@@ -453,11 +423,10 @@ namespace Video {
 		File.Write(Packets);
 		Current = First;
 		do {
-			PacketData* Packet = Parser->GetPacketData(*Current);
-			DWORD Size = Packet->RawSize();
+			DWORD Size = (*Current)->RawSize();
 			File.Write(Size);
 			File.Write(Current->Time);
-			File.Write(Packet, Size);
+			File.Write(&(*Current), Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		File.Save();
@@ -482,8 +451,8 @@ namespace Video {
 	}
 	VOID OpenREC(BOOL Override, CONST HWND Parent) {
 		MappedFile File(FileName);
-		BYTE RecVersion = File.Read<BYTE>();
-		if (RecVersion < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
+		BYTE RecVersion;
+		if (File.Read(RecVersion) < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
 		BYTE Encryption = File.Read<BYTE>();
 		if (!Encryption || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
@@ -579,18 +548,12 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	VOID WINAPIV ThreadUnload(Packet* Current) {
+	VOID Unload() {
 		Packet* Next;
 		do {
-			Next = Current->Next;
-			delete Current;
-			SwitchToThread();
+			Next = CurrentLogin->Last->Next;
+			delete CurrentLogin;
 		} while (Current = Next);
-	}
-	VOID Unload() {
-		if (_beginthread(_beginthread_proc_type(ThreadUnload), 0, Current) == -1L) {
-			ThreadUnload(Current); //out of memory, let's free some from our own thread
-		}
 	}
 	VOID CancelOpen(CONST BOOL Override) {
 		if (Packet*& Start = Started()) {
@@ -907,7 +870,7 @@ namespace Video {
 			NextLogin->Prev = CurrentLogin->Prev;
 			CurrentLogin->Last->Next = NULL;
 			PlayedTime = NextLogin->Time - Current->Time;
-			Unload();
+			delete CurrentLogin;
 			Current = NextLogin;
 			do {
 				Current->Time -= PlayedTime;
@@ -917,7 +880,7 @@ namespace Video {
 			return NextLogin;
 		}
 		Last = CurrentLogin->Prev;
-		Unload();
+		delete CurrentLogin;
 		if (Last) {
 			Changed = TRUE;
 			SessionTimeChanged(LoginNumber - 1);
@@ -1018,62 +981,54 @@ namespace Video {
 	}
 
 	VOID Record() {
-		if (Last && 1000 > INFINITE - Last->Time || !Parser->FixEnterGame(Proxy::Server)) {
-			return Proxy::Server.Discard();
+		try {
+			if (Last && 1000 > INFINITE - Last->Time) throw bad_alloc();
+			Current = (Last ? Last->Next = new(&Proxy::Server) Session(Last) : First = new(&Proxy::Server) Session());
+			Timer::Start();
+			State = RECORD;
+			TimeStr::SetTime(Current->Time);
+			ListBox_SetCurSel(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, Parser->Character->Name.Data));
+			ListBox_Enable(MainWnd::ListSessions, FALSE);
+			TCHAR LabelString[40];
+			LoadString(NULL, LABEL_RECORDING, LabelString, 40);
+			Static_SetText(MainWnd::LabelTime, LabelString);
+			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
+			MainWnd::Focus(MainWnd::ButtonMain);
 		}
-		if (!(Current = (Last ? Last->Next = new(nothrow) Session(Proxy::Server, Last) : First = new(nothrow) Session(Proxy::Server)))) {
-			return Proxy::Server.Discard();
-		}
-		Timer::Start();
-		State = RECORD;
-		TimeStr::SetTime(Current->Time);
-		ListBox_SetCurSel(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, Parser->Character->Name.Data));
-		ListBox_Enable(MainWnd::ListSessions, FALSE);
-		TCHAR LabelString[40];
-		LoadString(NULL, LABEL_RECORDING, LabelString, 40);
-		Static_SetText(MainWnd::LabelTime, LabelString);
-		Static_SetText(MainWnd::StatusTime, TimeStr::Time);
-		MainWnd::Focus(MainWnd::ButtonMain);
+		catch (bad_alloc&) { }
 	}
 	VOID RecordNext() {
-		if (Parser->EnterGame) {
-			if (1000 > INFINITE - Current->Time || !Parser->FixEnterGame(Proxy::Server)) {
-				Proxy::Server.Discard();
-				return Continue();
+		try {
+			if (Parser->EnterGame) {
+				if (1000 > INFINITE - Current->Time) throw bad_alloc();
+				Current->Next = new(&Proxy::Server) Session(Current);
+				Timer::Restart();
+				Current->EndSession();
+				Last = Current;
+				Changed = TRUE;
+				Current = Current->Next;
+				LastTimeChanged();
+				CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
+				ListBox_SetItemData(MainWnd::ListSessions, ListBox_InsertString(MainWnd::ListSessions, LoginNumber, TimeStr::Set(LoginNumber, Last->Login->SessionTime(), Last->Time)), Last->Login);
 			}
-			if (!(Current->Next = new(nothrow) Session(Proxy::Server, Current))) {
-				Proxy::Server.Discard();
-				return Continue();
+			else {
+				if (Parser->Pending || Parser->PlayerData) throw bad_alloc();
+				DWORD Delay = Timer::Elapsed();
+				if (Delay > BIGDELAY) {
+					Delay = BIGDELAY;
+				}
+				if (Delay > INFINITE - Current->Time) {
+					Delay = INFINITE - Current->Time;
+				}
+				Current->Next = new(&Proxy::Server) Packet(Current, WORD(Delay));
+				Current = Current->Next;
 			}
-			Timer::Restart();
-			Current->EndSession();
-			Last = Current;
-			Changed = TRUE;
-			Current = Current->Next;
-			LastTimeChanged();
-			CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
-			ListBox_SetItemData(MainWnd::ListSessions, ListBox_InsertString(MainWnd::ListSessions, LoginNumber, TimeStr::Set(LoginNumber, Last->Login->SessionTime(), Last->Time)), Last->Login);
+			TimeStr::SetTime(Current->Time);
+			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 		}
-		else {
-			if (Parser->Pending || Parser->PlayerData || !Parser->FixTrade(Proxy::Server)) {
-				Proxy::Server.Discard();
-				return Continue();
-			}
-			DWORD Delay = Timer::Elapsed();
-			if (Delay > BIGDELAY) {
-				Delay = BIGDELAY;
-			}
-			if (Delay > INFINITE - Current->Time) {
-				Delay = INFINITE - Current->Time;
-			}
-			if (!(Current->Next = new(nothrow) Packet(Proxy::Server, Current, WORD(Delay)))) {
-				Proxy::Server.Discard();
-				return Continue();
-			}
-			Current = Current->Next;
+		catch (bad_alloc&) {
+			Continue();
 		}
-		TimeStr::SetTime(Current->Time);
-		Static_SetText(MainWnd::StatusTime, TimeStr::Time);
 	}
 	
 	VOID Cancel() {
@@ -1083,7 +1038,7 @@ namespace Video {
 		TCHAR LabelString[40];
 		if (Last) {
 			Last->Next = NULL;
-			Unload();
+			delete CurrentLogin;
 			TimeStr::SetTime(Last->Time);
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			ListBox_DeleteString(MainWnd::ListSessions, ListBox_GetCurSel(MainWnd::ListSessions));
@@ -1098,7 +1053,7 @@ namespace Video {
 		}
 		else {
 			First = NULL;
-			Unload();
+			delete CurrentLogin;
 			TimeStr::SetTimeSeconds(0);
 			SetWindowRedraw(MainWnd::ListSessions, FALSE);
 			ListBox_ResetContent(MainWnd::ListSessions);
@@ -1159,8 +1114,14 @@ namespace Video {
 	}
 
 	BOOL SyncOne() {
-		Parser->ConstructVideo();
-		return Proxy::Client.SendPacket(*Current);
+		try {
+			Parser->ConstructVideo();
+			Proxy::SendConstructed();
+		}
+		catch (bad_alloc&) {
+			return FALSE;
+		}
+		return TRUE;
 	}
 	BOOL SyncTime() {
 		while (PlayedTime >= Current->Next->Time) {
@@ -1327,7 +1288,7 @@ namespace Video {
 	}
 
 	BOOL SendPing() {
-		return Proxy::Client.SendPacket(Proxy::Server);
+		return Proxy::Client.SendPacket(&Proxy::Server);
 	}
 	BOOL SendFinished() {
 		return Proxy::SendClientMessage(ID_GAME_INFO, MESSAGE_END_VIDEO);
@@ -1386,8 +1347,10 @@ namespace Video {
 	}
 	
 	VOID Play() {
-		Parser->ConstructVideoPing();
-		if (!Proxy::Server) {
+		try {
+			Parser->ConstructVideoPing();
+		}
+		catch (bad_alloc&) {
 			return;
 		}
 		State = PLAY;
@@ -1429,7 +1392,6 @@ namespace Video {
 		ScrollBar_Enable(MainWnd::ScrollPlayed, FALSE);
 	}
 	VOID Eject() {
-		Parser->RewindVideo();
 		TimeStr::SetTime(Last->Time);
 		State = IDLE;
 		PlayerStop();
@@ -1457,7 +1419,6 @@ namespace Video {
 		MainWnd::Focus(MainWnd::ListSessions);
 	}
 	VOID Logout() {
-		Parser->RewindVideo();
 		TimeStr::SetTime(Last->Time);
 		PlayerLogout();
 	}
@@ -1662,9 +1623,7 @@ namespace Video {
 	}
 	VOID SetLight(CONST BYTE Light) {
 		Parser->ConstructPlayerLight(Current->Login->PlayerID, Light);
-		if (!Proxy::SendConstructed()) {
-			return Logout();
-		}
+		Proxy::SendConstructed();
 	}
 
 	DWORD StartSkip() {
@@ -2196,6 +2155,13 @@ namespace Video {
 			return Logout();
 		}
 	}
+	VOID PartialUnload() {
+		Packet* Next;
+		do {
+			Next = Current->Next;
+			delete Current;
+		} while (Current = Next);
+	}
 	VOID CutEnd() {
 		CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 		if (Current->IsLast()) {
@@ -2208,19 +2174,23 @@ namespace Video {
 				Backup->CutSession();
 				Backup->Login->Last->Next = NULL;
 				PlayedTime = Backup->Login->Last->Time - Backup->Time;
-				Unload();
-				if (PlayedTime) {
-					Current = Backup->Next;
-					do {
-						Current->Time -= PlayedTime;
-					} while (Current = Current->Next);
-				}
 			}
 			else {
 				Last = Backup;
-				Unload();
+				PlayedTime = 0;
 			}
+			Packet* Next;
+			do {
+				Next = Current->Next;
+				delete Current;
+			} while (Current = Next);
 			Backup->EndSession();
+			if (PlayedTime) {
+				Current = Backup->Next;
+				do {
+					Current->Time -= PlayedTime;
+				} while (Current = Current->Next);
+			}
 			Changed = TRUE;
 			PlayedTime = Backup->Time;
 			SessionTimeChanged(LoginNumber);
@@ -2378,24 +2348,23 @@ namespace Video {
 	}
 	VOID AddLight(CONST BYTE Light) {
 		Parser->ConstructPlayerLight(Current->Login->PlayerID, Light);
-		if (!Proxy::Extra) {
-			return Logout();
-		}
-		Packet* Next = new(nothrow) Packet(Proxy::Extra, Current, 0);
-		if (!Next) {
-			Proxy::Extra.Discard();
-			return Logout();
-		}
-		Next->Next = Current->Next;
-		if (Current->IsLast()) {
-			if (Next->Next) {
-				Next->CutSession();
+		try {
+			Packet* Next = new(&Proxy::Extra) Packet(Current, 0);
+			Next->Next = Current->Next;
+			if (Current->IsLast()) {
+				if (Next->Next) {
+					Next->CutSession();
+				}
+				Next->EndSession();
 			}
-			Next->EndSession();
+			Current = Current->Next = Next;
+			Changed = TRUE;
 		}
-		Current = Current->Next = Next;
-		Changed = TRUE;
-		if (!Proxy::Client.SendPacket(*Current)) {
+		catch (bad_alloc&) {
+			return Logout();
+		}
+		Proxy::Extra.Discard();
+		if (!Proxy::Client.SendPacket(&(*Current))) {
 			return Logout();
 		}
 	}

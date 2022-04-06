@@ -421,7 +421,7 @@ namespace Tibia {
 		try {
 			WritingFile(Path, FILE_END).Write(ServerString, 45);
 		}
-		catch (exception& e) {
+		catch (exception&) {
 			return FALSE;
 		}
 		return TRUE;

@@ -86,41 +86,37 @@ BOOL Parser700::FindChar(CONST PSTRING &Name) { //TODO: check 1100+ worldname
 	return FALSE;
 }
 
-BOOL Parser700::ParsePacketBase(CONST PacketBase &Packet) CONST{
-	SetPacket(Packet);
+BOOL Parser700::ParsePacketBase() CONST{
 	return TRUE;
 }
-BOOL Parser830::ParsePacketBase(CONST PacketBase &Packet) CONST{
-	SetPacket(Packet);
+BOOL Parser830::ParsePacketBase() CONST{
 	if (Overflow(4)) {
 		return FALSE;
 	}
 	DWORD Checksum = GetDword();
 	return Checksum == GetChecksum();
 }
-LPBYTE Parser700::AllocPacketBase(PacketBase &Packet, CONST WORD Size) CONST{
-	return CreatePacket(Packet, Size);
+PacketData* Parser700::AllocPacketBase(CONST WORD Size) CONST{
+	return CreatePacket(Size);
 }
-LPBYTE Parser830::AllocPacketBase(PacketBase &Packet, CONST WORD Size) CONST{
-	if (CreatePacket(Packet, Size + 4)) {
-		GetDword();
-	}
-	return Data;
+PacketData* Parser830::AllocPacketBase(CONST WORD Size) CONST{
+	PacketData* P = CreatePacket(Size + 4);
+	GetDword();
+	return P;
 }
-VOID Parser700::FinishPacketBase(PacketBase &Packet) CONST{
+VOID Parser700::FinishPacketBase(PacketData* CONST Packet) CONST{
 }
-VOID Parser830::FinishPacketBase(PacketBase &Packet) CONST{
+VOID Parser830::FinishPacketBase(PacketData* CONST Packet) CONST{
 	SetPacket(Packet);
 	DWORD& Checksum = GetDword();
 	Checksum = GetChecksum();
 }
 
-BOOL Parser700::ParsePacket(CONST PacketBase &Packet) CONST{
-	SetPacket(Packet);
+BOOL Parser700::ParsePacket() CONST{
 	return Avail();
 }
-BOOL Parser761::ParsePacket(CONST PacketBase &Packet) CONST{
-	if (!ParsePacketBase(Packet)) {
+BOOL Parser761::ParsePacket() CONST{
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Overflow(8) || Remaining() & 7) {
@@ -134,57 +130,38 @@ BOOL Parser761::ParsePacket(CONST PacketBase &Packet) CONST{
 	End = Data + Size;
 	return TRUE;
 }
-LPBYTE Parser700::AllocPacket(PacketBase &Packet, CONST WORD Size) CONST{
-	return CreatePacket(Packet, Size);
+PacketData* Parser700::AllocPacket(CONST WORD Size) CONST{
+	return CreatePacket(Size);
 }
-LPBYTE Parser761::AllocPacket(PacketBase &Packet, CONST WORD Size) CONST{
+PacketData* Parser761::AllocPacket(CONST WORD Size) CONST{
 	if (Size > 0xFFF6) {
-		return Data = End = NULL;
+		throw bad_alloc();
 	}
-	if (AllocPacketBase(Packet, (Size + 9) & 0xFFF8)) {
-		GetWord() = Size;
-		End = Data + Size;
-	}
-	return Data;
+	PacketData* P = AllocPacketBase((Size + 9) & 0xFFF8);
+	GetWord() = Size;
+	End = Data + Size;
+	return P;
 }
-VOID Parser700::FinishPacket(PacketBase &Packet) CONST{
+VOID Parser700::FinishPacket(PacketData* CONST Packet) CONST{
 }
-VOID Parser761::FinishPacket(PacketBase &Packet) CONST{
+VOID Parser761::FinishPacket(PacketData* CONST Packet) CONST{
 	SetPacket(Packet);
 	Encrypt();
 }
-VOID Parser830::FinishPacket(PacketBase &Packet) CONST{
+VOID Parser830::FinishPacket(PacketData* CONST Packet) CONST{
 	SetPacket(Packet);
 	DWORD &Checksum = GetDword();
 	Encrypt();
 	Checksum = GetChecksum();
 }
 
-VOID Parser700::RewindPacket(CONST PacketBase &Packet) CONST{
-	SetPacket(Packet);
-}
-VOID Parser830::RewindPacket(CONST PacketBase &Packet) CONST{
-	SetPacket(Packet);
-	GetDword();
-}
-
-PacketData *Parser700::GetPacketData(PacketBase &Src) CONST{
-	return &Src;
-}
-PacketData *Parser761::GetPacketData(PacketBase &Src) CONST{
-	return (PacketData *)(Src->Data);
-}
-PacketData *Parser830::GetPacketData(PacketBase &Src) CONST{
-	return (PacketData *)(Src->Data + 4);
-}
-
 VOID Parser700::ConstructMessage(CONST BYTE Type, CONST UINT ID) CONST {
 	RSTRING Str(ID);
-	if (Str.Len <= 1000 && AllocPacket(Proxy::Extra, 3 + Str.Len)) {
-		GetByte() = Type;
-		GetString(Str.Len) = Str.Data;
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 1000) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(3 + Str.Len));
+	GetByte() = Type;
+	GetString(Str.Len) = Str.Data;
+	FinishPacket(&Proxy::Extra);
 }
 
 BOOL Parser700::ParseSignatures() {
@@ -201,7 +178,7 @@ BOOL Parser700::ParseSignatures() {
 }
 
 BOOL Parser700::ParseOutgoingLogin() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Overflow(23) || Underflow(52)) {
 		return FALSE;
 	}
@@ -229,7 +206,7 @@ BOOL Parser700::ParseOutgoingLogin() {
 	return TRUE;
 }
 BOOL Parser761::ParseOutgoingLogin() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Misflow(145)) {
 		return FALSE;
 	}
@@ -261,7 +238,7 @@ BOOL Parser761::ParseOutgoingLogin() {
 	return TRUE;
 }
 BOOL Parser830::ParseOutgoingLogin() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(145)) {
@@ -340,7 +317,7 @@ BOOL Parser971::ParseLoginData() {
 	return TRUE;
 }
 BOOL Parser971::ParseOutgoingLogin() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(150)) {
@@ -349,7 +326,7 @@ BOOL Parser971::ParseOutgoingLogin() {
 	return ParseLoginData();
 }
 BOOL Parser1061::ParseOutgoingLogin() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Overflow(150)) { // Extra data: string about GPU and CPU capabilities - no need to parse
@@ -358,7 +335,7 @@ BOOL Parser1061::ParseOutgoingLogin() {
 	return ParseLoginData();
 }
 BOOL Parser1072::ParseOutgoingLogin() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Overflow(278)) { // 10.61 extra data + 128-byte RSA block with login token (empty on 10.80+) and stay logged in flag (10.74+) - no need to parse
@@ -371,13 +348,13 @@ VOID Parser700::ForwardLogin() CONST {
 }
 VOID Parser761::ForwardLogin() CONST {
 	FinishRSA();
-	FinishPacketBase(Proxy::Client);
+	FinishPacketBase(&Proxy::Client);
 }
 VOID Parser1072::ForwardLogin() CONST {
 	FinishRSA();
 	//Data = End - 128; // skip extra data and go to the last 128-byte RSA block
 	//ProxyRSA(); // needed on global only
-	FinishPacketBase(Proxy::Client);
+	FinishPacketBase(&Proxy::Client);
 }
 
 VOID Parser700::ConstructVideoLoginBase(CONST RSTRING &Str) {
@@ -391,26 +368,26 @@ VOID Parser700::ConstructVideoLoginBase(CONST RSTRING &Str) {
 }
 VOID Parser700::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && CreatePacket(Proxy::Extra, 24 + Str.Len)) {
-		ConstructVideoLoginBase(Str);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(24 + Str.Len));
+	ConstructVideoLoginBase(Str);
 }
 VOID Parser710::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 26 + Str.Len)) {
-		ConstructVideoLoginBase(Str);
-		GetWord() = 0; // Premium days
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(26 + Str.Len));
+	ConstructVideoLoginBase(Str);
+	GetWord() = 0; // Premium days
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser971::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 27 + Str.Len)) {
-		ConstructVideoLoginBase(PLAY_VIDEO);
-		GetByte() = FALSE;
-		GetWord() = 0; // Premium days
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(27 + Str.Len));
+	ConstructVideoLoginBase(PLAY_VIDEO);
+	GetByte() = FALSE;
+	GetWord() = 0; // Premium days
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser1012::ConstructVideoLoginBase(CONST RSTRING &Str) {
 	GetByte() = 0x64;
@@ -427,11 +404,11 @@ VOID Parser1012::ConstructVideoLoginBase(CONST RSTRING &Str) {
 }
 VOID Parser1012::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 37 + Str.Len)) {
-		ConstructVideoLoginBase(Str);
-		GetWord() = 0; // Premium days
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(37 + Str.Len));
+	ConstructVideoLoginBase(Str);
+	GetWord() = 0; // Premium days
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser1074::ConstructVideoLogin() {
 	SessionKey.Wipe(); // if we don't send a session key, it's empty
@@ -440,27 +417,27 @@ VOID Parser1074::ConstructVideoLogin() {
 VOID Parser1080::ConstructVideoLogin() {
 	SessionKey.Wipe();
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 40 + Str.Len)) {
-		ConstructVideoLoginBase(Str);
-		GetByte() = FALSE; //Premium
-		GetDword() = 0; // Premium time
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(40 + Str.Len));
+	ConstructVideoLoginBase(Str);
+	GetByte() = FALSE; //Premium
+	GetDword() = 0; // Premium time
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser1082::ConstructVideoLogin() {
 	SessionKey.Wipe();
 	RSTRING Str(PLAY_VIDEO);
-	if (Str.Len <= 40 && AllocPacket(Proxy::Extra, 41 + Str.Len)) {
-		ConstructVideoLoginBase(Str);
-		GetByte() = FALSE; //Frozen
-		GetByte() = FALSE; //Premium
-		GetDword() = 0; // Premium time
-		FinishPacket(Proxy::Extra);
-	}
+	if (Str.Len > 40) throw bad_alloc();
+	Proxy::Extra.Construct(AllocPacket(41 + Str.Len));
+	ConstructVideoLoginBase(Str);
+	GetByte() = FALSE; //Frozen
+	GetByte() = FALSE; //Premium
+	GetDword() = 0; // Premium time
+	FinishPacket(&Proxy::Extra);
 }
 
 BOOL Parser700::ParseIncomingLogin() {
-	if (!ParsePacket(Proxy::Server)) {
+	if (!ParsePacket()) {
 		return FALSE;
 	}
 	EnterGame = FALSE;
@@ -524,7 +501,7 @@ BOOL Parser700::ParseIncomingLogin() {
 				return FALSE;
 		}
 	} while (Avail());
-	FinishPacket(Proxy::Server);
+	FinishPacket(&Proxy::Server);
 	return TRUE;
 }
 BOOL Parser700::ParseMessage() {
@@ -798,79 +775,73 @@ BOOL Parser700::ConstructTicket() CONST {
 	return FALSE;
 }
 BOOL Parser841::ConstructTicket() CONST {
-	if (AllocPacket(Proxy::Extra, 6)) {
-		GetByte() = 0x1F;
-		Write(TICKET, 5);
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(6));
+	GetByte() = 0x1F;
+	Write(TICKET, 5);
+	FinishPacketBase(&Proxy::Extra);
 	return TRUE;
 }
 
 BOOL Parser700::ConstructGame() CONST {
-	if (CreatePacket(Proxy::Extra, 10 + Password.Len + Character->Name.Len)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = Tibia::Version;
-		GetByte() = GamemasterMode;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-	}
+	Proxy::Extra.Construct(AllocPacket(10 + Password.Len + Character->Name.Len));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = Tibia::Version;
+	GetByte() = GamemasterMode;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
 	return TRUE;
 }
 BOOL Parser722::ConstructGame() CONST {
-	if (CreatePacket(Proxy::Extra, 14 + Password.Len + Character->Name.Len)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = Tibia::Version;
-		GetByte() = GamemasterMode;
-		GetDword() = Account;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-	}
+	Proxy::Extra.Construct(AllocPacket(14 + Password.Len + Character->Name.Len));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = Tibia::Version;
+	GetByte() = GamemasterMode;
+	GetDword() = Account;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
 	return TRUE;
 }
 BOOL Parser761::ConstructGame() CONST {
-	if (CreatePacket(Proxy::Extra, 129)) {
-		GetByte() = 0x0A;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetDword() = Account;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		FinishRSA();
-	}
+	Proxy::Extra.Construct(AllocPacket(129));
+	GetByte() = 0x0A;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetDword() = Account;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	FinishRSA();
 	return TRUE;
 }
 BOOL Parser771::ConstructGame() CONST {
-	if (CreatePacket(Proxy::Extra, 133)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = Tibia::Version;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetDword() = Account;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		FinishRSA();
-	}
+	Proxy::Extra.Construct(AllocPacket(133));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = Tibia::Version;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetDword() = Account;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	FinishRSA();
 	return TRUE;
 }
 BOOL Parser830::ConstructGame() CONST {
-	if (AllocPacketBase(Proxy::Extra, 133)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = Tibia::Version;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(Account.Len) = Account.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(133));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = Tibia::Version;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(Account.Len) = Account.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 	return TRUE;
 }
 BOOL Parser841::ConstructGame() CONST {
@@ -878,7 +849,7 @@ BOOL Parser841::ConstructGame() CONST {
 }
 
 BOOL Parser700::ParseOutgoingGame() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Overflow(10 + Password.Len + MinNameLen) || Underflow(10 + Password.Len + MaxNameLen)) {
 		return FALSE;
 	}
@@ -908,7 +879,7 @@ BOOL Parser700::ParseOutgoingGame() {
 	return Password == GetString();
 }
 BOOL Parser722::ParseOutgoingGame() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Overflow(14 + Password.Len + MinNameLen) || Underflow(14 + Password.Len + MaxNameLen)) {
 		return FALSE;
 	}
@@ -941,7 +912,7 @@ BOOL Parser722::ParseOutgoingGame() {
 	return Password == GetString();
 }
 BOOL Parser761::ParseOutgoingGame() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Misflow(129)) {
 		return FALSE;
 	}
@@ -978,7 +949,7 @@ BOOL Parser761::ParseOutgoingGame() {
 	return Password == GetString();
 }
 BOOL Parser771::ParseOutgoingGame() {
-	SetPacket(Proxy::Client);
+	//ParsePacketBase();
 	if (Misflow(133)) {
 		return FALSE;
 	}
@@ -1015,7 +986,7 @@ BOOL Parser771::ParseOutgoingGame() {
 	return Password == GetString();
 }
 BOOL Parser830::ParseOutgoingGame() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(133)) {
@@ -1089,7 +1060,7 @@ BOOL Parser971::ParseGameData() {
 	return Compare(TICKET, 5); //980 removed the restore channels byte, it's ok to ignore it
 }
 BOOL Parser971::ParseOutgoingGame() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(138)) {
@@ -1111,7 +1082,7 @@ BOOL Parser971::ParseOutgoingGame() {
 	return ParseGameData();
 }
 BOOL Parser1071::ParseOutgoingGame() {
-	if (!ParsePacketBase(Proxy::Client)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(140)) {
@@ -1198,7 +1169,7 @@ BOOL Parser700::ForwardGame() CONST {
 }
 BOOL Parser761::ForwardGame() CONST {
 	FinishRSA();
-	FinishPacketBase(Proxy::Client);
+	FinishPacketBase(&Proxy::Client);
 	return TRUE;
 }
 BOOL Parser841::ForwardGame() CONST {
@@ -1206,7 +1177,7 @@ BOOL Parser841::ForwardGame() CONST {
 }
 
 BOOL Parser841::ParseReconnectTicket() CONST {
-	if (!ParsePacketBase(Proxy::Extra)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(8) || GetWord() != 6) {
@@ -1223,7 +1194,7 @@ BOOL Parser841::ParseReconnectTicket() CONST {
 }
 
 BOOL Parser841::ParseTicket() CONST {
-	if (!ParsePacketBase(Proxy::Server)) {
+	if (!ParsePacketBase()) {
 		return FALSE;
 	}
 	if (Misflow(8) || GetWord() != 6) {
@@ -1234,127 +1205,114 @@ BOOL Parser841::ParseTicket() CONST {
 	}
 	Read(Ticket, 5);
 	FinishRSA();
-	FinishPacketBase(Proxy::Client);
+	FinishPacketBase(&Proxy::Client);
 	return TRUE;
 }
 
 VOID Parser841::ConstructTicketGame(CONST LPBYTE Ticket) CONST {
-	if (AllocPacketBase(Proxy::Extra, 133)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = Tibia::Version;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(Account.Len) = Account.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		Write(Ticket, 5);
-		GetByte() = 0; //restore channels byte, added at 872 but harmless before it
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(133));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = Tibia::Version;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(Account.Len) = Account.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	Write(Ticket, 5);
+	GetByte() = 0; //restore channels byte, added at 872 but harmless before it
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 }
 VOID Parser971::ConstructTicketGame(CONST LPBYTE Ticket) CONST {
-	if (AllocPacketBase(Proxy::Extra, 138)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = ProtocolVersion;
-		GetWord() = Tibia::Version;
-		GetWord() = 0;
-		GetByte() = FALSE;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(Account.Len) = Account.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		Write(Ticket, 5);
-		GetByte() = 0; //restore channels byte, removed at 980 but harmless anyway
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(138));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = ProtocolVersion;
+	GetWord() = Tibia::Version;
+	GetWord() = 0;
+	GetByte() = FALSE;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(Account.Len) = Account.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	Write(Ticket, 5);
+	GetByte() = 0; //restore channels byte, removed at 980 but harmless anyway
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 }
 VOID Parser1071::ConstructTicketGame(CONST LPBYTE Ticket) CONST {
-	if (AllocPacketBase(Proxy::Extra, 140)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = ProtocolVersion;
-		GetWord() = Tibia::Version;
-		GetWord() = 0;
-		GetWord() = DatRevision;
-		GetByte() = FALSE;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(Account.Len) = Account.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		Write(Ticket, 5);
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(140));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = ProtocolVersion;
+	GetWord() = Tibia::Version;
+	GetWord() = 0;
+	GetWord() = DatRevision;
+	GetByte() = FALSE;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(Account.Len) = Account.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	Write(Ticket, 5);
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 }
 VOID Parser1072::ConstructTicketGame(CONST LPBYTE Ticket) CONST {
-	if (AllocPacketBase(Proxy::Extra, 140)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = ProtocolVersion;
-		GetWord() = Tibia::Version;
-		GetWord() = 0;
-		GetWord() = DatRevision;
-		GetByte() = FALSE;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(Account.Len) = Account.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		GetString(Password.Len) = Password.Data;
-		GetWord() = 0;
-		Write(Ticket, 5);
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(140));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = ProtocolVersion;
+	GetWord() = Tibia::Version;
+	GetWord() = 0;
+	GetWord() = DatRevision;
+	GetByte() = FALSE;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(Account.Len) = Account.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	GetString(Password.Len) = Password.Data;
+	GetWord() = 0;
+	Write(Ticket, 5);
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 }
 VOID Parser1074::ConstructTicketGame(CONST LPBYTE Ticket) CONST {
-	if (AllocPacketBase(Proxy::Extra, 140)) {
-		GetByte() = 0x0A;
-		GetWord() = 2;
-		GetWord() = ProtocolVersion;
-		GetWord() = Tibia::Version;
-		GetWord() = 0;
-		GetWord() = DatRevision;
-		GetByte() = FALSE;
-		StartRSA();
-		WriteEncryptionKey();
-		GetByte() = GamemasterMode;
-		GetString(SessionKey.Len) = SessionKey.Data;
-		GetString(Character->Name.Len) = Character->Name.Data;
-		Write(Ticket, 5);
-		FinishRSA();
-		FinishPacketBase(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacketBase(140));
+	GetByte() = 0x0A;
+	GetWord() = 2;
+	GetWord() = ProtocolVersion;
+	GetWord() = Tibia::Version;
+	GetWord() = 0;
+	GetWord() = DatRevision;
+	GetByte() = FALSE;
+	StartRSA();
+	WriteEncryptionKey();
+	GetByte() = GamemasterMode;
+	GetString(SessionKey.Len) = SessionKey.Data;
+	GetString(Character->Name.Len) = Character->Name.Data;
+	Write(Ticket, 5);
+	FinishRSA();
+	FinishPacketBase(&Proxy::Extra);
 }
 
 BOOL Parser700::ParseIncomingGame() {
-	if (!ParsePacket(Proxy::Server)) {
+	if (!ParsePacket()) {
 		return FALSE;
 	}
 	return GetPacketType();
 }
 
-BOOL Parser700::ParseIncomingReconnect() {
-	if (!ParsePacket(Proxy::Extra)) {
-		return FALSE;
-	}
-	return GetPacketType();
-}
 VOID Parser700::ConstructReconnect() CONST {
-	Proxy::Extra.Copy(Proxy::Server);
-	if (!Proxy::Extra) {
-		return;
-	}
-	FinishPacket(Proxy::Extra);
+	Proxy::Extra.Construct(CreatePacket(Proxy::Server->Size));
+	Proxy::Extra->Copy(Proxy::Server->Data);
+	FinishPacket(&Proxy::Extra);
 }
 
 BOOL Parser700::GetPacketType() {
@@ -1421,7 +1379,7 @@ BOOL Parser980::GetPacketType() {
 	TradeBug = FALSE;
 	do {
 		switch (GetByte()) {
-			case 0xE8: //version? (seen on 1100 - gunzodus)
+			case 0xE8: //version? (seen on 1100 - gunzodus, custom opcode?)
 				Trading = FALSE;
 				return EnterGame = TRUE;
 			case 0x0A:
@@ -1598,45 +1556,46 @@ BOOL Parser940::ParseMarketClose() CONST {
 }
 
 BOOL Parser700::ParseSafeReconnect() CONST {
-	if (!ParsePacket(Proxy::Client)) {
+	if (!ParsePacket()) {
 		return TRUE;
 	}
 	if (GetByte() == 0x14) {
 		return TRUE;
 	}
-	FinishPacket(Proxy::Client);
+	FinishPacket(&Proxy::Client);
 	return FALSE;
 }
 
 VOID Parser980::ConstructEnterPendingState() CONST {
-	if (AllocPacket(Proxy::Extra, 1)) {
-		GetByte() = 0x0A; //makes client re-send 0x0F, but the 0x0F response is bugged if you don't reconnect (battle list is already known)
-		FinishPacket(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(1));
+	GetByte() = 0x0A; //makes client re-send 0x0F, but the 0x0F response is bugged if you don't reconnect (battle list is already known)
+	FinishPacket(&Proxy::Extra);
 }
 
-BOOL Parser700::FixTrade(PacketBase &Src) CONST {
+LPVOID Parser700::RecordPacket(CONST PacketData* CONST Src) CONST {
+	WORD NewSize = Src->Size;
 	if (TradeBug) {
-		LPBYTE Trash = LPBYTE(&Src);
-		CONST PacketData *Old = GetPacketData(Src);
-		if (!AllocPacket(Src, Old->Size + 1)) {
-			Src.Set(Trash);
-			return FALSE;
-		}
-		GetByte() = 0x7F;
-		Write(Old->Data, Old->Size);
-		delete[] Trash;
+		NewSize += 1;
 	}
-	return TRUE;
+	LPVOID Result = CreatePacket(NewSize, Video::Packet::NewHeap, sizeof(Video::Packet));
+	if (TradeBug) {
+		GetByte() = 0x7F;
+	}
+	Write(Src->Data, Src->Size);
+	return Result;
 }
-BOOL Parser980::FixEnterGame(PacketBase& Src) CONST{
+LPVOID Parser700::RecordSession(CONST PacketData* CONST Src) CONST {
+	LPVOID Result = CreatePacket(Src->Size, Video::Packet::NewHeap, sizeof(Video::Session));
+	Write(Src->Data, Src->Size);
+	return Result;
+}
+LPVOID Parser980::RecordSession(CONST PacketData* CONST Src) CONST {
+	WORD NewSize = Src->Size;
 	if (!PlayerData) {
-		LPBYTE Trash = LPBYTE(&Src);
-		CONST PacketData *Old = GetPacketData(Src);
-		if (!AllocPacket(Src, Old->Size + 24)) {
-			Src.Set(Trash);
-			return FALSE;
-		}
+		NewSize += 24;
+	}
+	LPVOID Result = CreatePacket(NewSize, Video::Packet::NewHeap, sizeof(Video::Session));
+	if (!PlayerData) {
 		GetByte() = 0x17;
 		GetDword() = PlayerID;
 		GetWord() = 0x32;
@@ -1645,19 +1604,17 @@ BOOL Parser980::FixEnterGame(PacketBase& Src) CONST{
 		GetDouble() = Speed[2];
 		GetByte() = ReportBugs;
 		GetByte() = 0x0A;
-		Write(Old->Data, Old->Size);
-		delete[] Trash;
 	}
-	return TRUE;
+	Write(Src->Data, Src->Size);
+	return Result;
 }
-BOOL Parser1054::FixEnterGame(PacketBase& Src) CONST {
+LPVOID Parser1054::RecordSession(CONST PacketData* CONST Src) CONST {
+	WORD NewSize = Src->Size;
 	if (!PlayerData) {
-		LPBYTE Trash = LPBYTE(&Src);
-		CONST PacketData *Old = GetPacketData(Src);
-		if (!AllocPacket(Src, Old->Size + 25)) {
-			Src.Set(Trash);
-			return FALSE;
-		}
+		NewSize += 25;
+	}
+	LPVOID Result = CreatePacket(NewSize, Video::Packet::NewHeap, sizeof(Video::Session));
+	if (!PlayerData) {
 		GetByte() = 0x17;
 		GetDword() = PlayerID;
 		GetWord() = 0x32;
@@ -1667,19 +1624,17 @@ BOOL Parser1054::FixEnterGame(PacketBase& Src) CONST {
 		GetByte() = ReportBugs;
 		GetByte() = CanChangePvP;
 		GetByte() = 0x0A;
-		Write(Old->Data, Old->Size);
-		delete[] Trash;
 	}
-	return TRUE;
+	Write(Src->Data, Src->Size);
+	return Result;
 }
-BOOL Parser1058::FixEnterGame(PacketBase& Src) CONST {
+LPVOID Parser1058::RecordSession(CONST PacketData* CONST Src) CONST {
+	WORD NewSize = Src->Size;
 	if (!PlayerData) {
-		LPBYTE Trash = LPBYTE(&Src);
-		CONST PacketData*Old = GetPacketData(Src);
-		if (!AllocPacket(Src, Old->Size + 26)) {
-			Src.Set(Trash);
-			return FALSE;
-		}
+		NewSize += 26;
+	}
+	LPVOID Result = CreatePacket(NewSize, Video::Packet::NewHeap, sizeof(Video::Session));
+	if (!PlayerData) {
 		GetByte() = 0x17;
 		GetDword() = PlayerID;
 		GetWord() = 0x32;
@@ -1690,19 +1645,17 @@ BOOL Parser1058::FixEnterGame(PacketBase& Src) CONST {
 		GetByte() = CanChangePvP;
 		GetByte() = ExpertMode;
 		GetByte() = 0x0A;
-		Write(Old->Data, Old->Size);
-		delete[] Trash;
 	}
-	return TRUE;
+	Write(Src->Data, Src->Size);
+	return Result;
 }
-BOOL Parser1080::FixEnterGame(PacketBase& Src) CONST {
+LPVOID Parser1080::RecordSession(CONST PacketData* CONST Src) CONST {
+	WORD NewSize = Src->Size;
 	if (!PlayerData) {
-		LPBYTE Trash = LPBYTE(&Src);
-		CONST PacketData *Old = GetPacketData(Src);
-		if (!AllocPacket(Src, Old->Size + 30 + Store.Len)) {
-			Src.Set(Trash);
-			return FALSE;
-		}
+		NewSize += 30 + Store.Len;
+	}
+	LPVOID Result = CreatePacket(NewSize, Video::Packet::NewHeap, sizeof(Video::Session));
+	if (!PlayerData) {
 		GetByte() = 0x17;
 		GetDword() = PlayerID;
 		GetWord() = 0x32;
@@ -1715,40 +1668,25 @@ BOOL Parser1080::FixEnterGame(PacketBase& Src) CONST {
 		GetString(Store.Len) = Store.Data; // In-game store URL
 		GetWord() = CoinPack;
 		GetByte() = 0x0A;
-		Write(Old->Data, Old->Size);
-		delete[] Trash;
 	}
-	return TRUE;
+	Write(Src->Data, Src->Size);
+	return Result;
 }
 
 VOID Parser700::ConstructVideoPing() CONST {
-	if (AllocPacket(Proxy::Server, 1)) {
-		GetByte() = 0x1E;
-		FinishPacket(Proxy::Server);
-	}
+	Proxy::Server.Construct(AllocPacket(1));
+	GetByte() = 0x1E;
+	FinishPacket(&Proxy::Server);
 }
 
 VOID Parser700::ConstructVideo() CONST {
-}
-VOID Parser761::ConstructVideo() CONST {
-	if (Video::Current->NeedEncrypt()) {
-		FinishPacket(*Video::Current);
-	}
-}
-VOID Parser700::RewindVideo() CONST {
-}
-VOID Parser761::RewindVideo() CONST {
-	Video::Current = Video::First;
-	do {
-		if (Video::Current->NeedDecrypt()) {
-			RewindPacket(*Video::Current);
-			Decrypt();
-		}
-	} while (Video::Current = Video::Current->Next);
+	Proxy::Extra.Construct(AllocPacket((*Video::Current)->Size));
+	Write((*Video::Current)->Data, (*Video::Current)->Size);
+	FinishPacket(&Proxy::Extra);
 }
 
 BOOL Parser700::ParseVideoCommand() CONST {
-	if (!ParsePacket(Proxy::Client)) {
+	if (!ParsePacket()) {
 		return FALSE;
 	}
 	switch (GetByte()) {
@@ -1805,7 +1743,7 @@ BOOL Parser700::ParseMove() CONST {
 		}
 	}
 	ConstructCancelWalk(CancelDirection);
-	return Proxy::SendConstructed();
+	return Proxy::SendConstructed(), TRUE;
 }
 Direction::TYPE Parser700::GetCancelDirection(CONST Direction::TYPE AutoWalkDirection) CONST {
 	switch (AutoWalkDirection) {
@@ -1843,7 +1781,7 @@ BOOL Parser700::ParseMove(CONST Direction::TYPE Direction) CONST {
 		return FALSE;
 	}
 	ConstructCancelWalk(Direction);
-	return Proxy::SendConstructed();
+	return Proxy::SendConstructed(), TRUE;
 }
 BOOL Parser700::ParseMove(CONST Direction::TYPE HorizontalDirection, CONST Direction::TYPE VerticalDirection) CONST {
 	return TRUE; //ignore like an unknown packet
@@ -2073,7 +2011,7 @@ BOOL Parser700::ParseTarget() CONST {
 	}
 	GetDword();
 	ConstructCancelTarget();
-	return Proxy::SendConstructed();
+	return Proxy::SendConstructed(), TRUE;
 }
 BOOL Parser860::ParseTarget() CONST {
 	if (Misflow(8)) {
@@ -2081,42 +2019,37 @@ BOOL Parser860::ParseTarget() CONST {
 	}
 	GetDword();
 	ConstructCancelTarget(GetDword());
-	return Proxy::SendConstructed();
+	return Proxy::SendConstructed(), TRUE;
 }
 
 VOID Parser700::ConstructCancelTarget() CONST {
-	if (AllocPacket(Proxy::Extra, 1)) {
-		GetByte() = 0xA3;
-		FinishPacket(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(1));
+	GetByte() = 0xA3;
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser860::ConstructCancelTarget(CONST DWORD Count) CONST {
-	if (AllocPacket(Proxy::Extra, 5)) {
-		GetByte() = 0xA3;
-		GetDword() = Count;
-		FinishPacket(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(5));
+	GetByte() = 0xA3;
+	GetDword() = Count;
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser700::ConstructCancelWalk(CONST Direction::TYPE Direction) CONST {
-	if (CreatePacket(Proxy::Extra, 1)) {
-		GetByte() = 0xB5;
-	}
+	Proxy::Extra.Construct(AllocPacket(1));
+	GetByte() = 0xB5;
 }
 VOID Parser735::ConstructCancelWalk(CONST Direction::TYPE Direction) CONST {
-	if (AllocPacket(Proxy::Extra, 2)) {
-		GetByte() = 0xB5;
-		GetByte() = Direction;
-		FinishPacket(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(2));
+	GetByte() = 0xB5;
+	GetByte() = Direction;
+	FinishPacket(&Proxy::Extra);
 }
 VOID Parser700::ConstructPlayerLight(CONST DWORD PlayerID, CONST BYTE Level) CONST {
-	if (AllocPacket(Proxy::Extra, 7)) {
-		GetByte() = 0x8D;
-		GetDword() = PlayerID;
-		GetByte() = Level;
-		GetByte() = 0xD7;
-		FinishPacket(Proxy::Extra);
-	}
+	Proxy::Extra.Construct(AllocPacket(7));
+	GetByte() = 0x8D;
+	GetDword() = PlayerID;
+	GetByte() = Level;
+	GetByte() = 0xD7;
+	FinishPacket(&Proxy::Extra);
 }
 
 BOOL Parser700::ParseNumber() {

@@ -65,16 +65,16 @@ protected:
 		return Result;
 	}
 	static BYTE &GetByte() {
-		return *(BYTE *) GetData(1);
+		return *(*(BYTE**)&Data)++;
 	}
 	static WORD &GetWord() {
-		return *(WORD *) GetData(2);
+		return *(*(WORD**)&Data)++;
 	}
 	static DWORD &GetDword() {
-		return *(DWORD *) GetData(4);
+		return *(*(DWORD**)&Data)++;
 	}
 	static PDOUBLE &GetDouble() {
-		return *(PDOUBLE *) GetData(5);
+		return *(*(PDOUBLE**)&Data)++;
 	}
 	static PSTRING &GetString() {
 		PSTRING &Result = *(PSTRING *) &GetWord();
@@ -134,6 +134,16 @@ protected:
 	static BOOL ParseNumber(DWORD &Number, CONST DWORD Max);
 	static BOOL ParseTime();
 	static BOOL ParseTime(DWORD &Time);
+
+protected:
+	virtual BOOL ParsePacketBase() CONST;
+	virtual PacketData* AllocPacketBase(CONST WORD Size) CONST;
+	virtual VOID FinishPacketBase(PacketData* CONST Packet) CONST;
+
+	virtual BOOL ParsePacket() CONST;
+	virtual PacketData* AllocPacket(CONST WORD Size) CONST;
+	virtual VOID FinishPacket(PacketData* CONST Packet) CONST;
+
 public:
 	static BYTE EnterGame;
 	static BYTE PlayerData;
@@ -161,31 +171,21 @@ public:
 
 	static BYTE GamemasterMode;
 
-	static VOID SetPacket(CONST PacketBase& Packet) {
+	static VOID SetPacket(PacketData *CONST Packet) {
 		End = (Data = Packet->Data) + Packet->Size;
 	}
-	static LPBYTE CreatePacket(PacketBase& Packet, CONST WORD Size) {
-		Packet.Alloc(Size);
-		if (!Packet) {
-			Data = NULL;
-		}
-		else {
-			SetPacket(Packet);
-		}
-		return Data;
+	static LPVOID CreatePacket(CONST WORD Size, CONST HANDLE Heap, CONST DWORD Header) {
+		LPVOID Raw = HeapAlloc(Heap, NULL, Header + Size + 2);
+		if (!Raw) throw bad_alloc();
+		SetPacket((PacketData*)CopyMemory((LPBYTE(Raw) + Header), &Size, 2));
+		return Raw;
 	}
-
-	virtual BOOL ParsePacketBase(CONST PacketBase& Packet) CONST;
-	virtual LPBYTE AllocPacketBase(PacketBase& Packet, CONST WORD Size) CONST;
-	virtual VOID FinishPacketBase(PacketBase& Packet) CONST;
-
-	virtual BOOL ParsePacket(CONST PacketBase& Packet) CONST;
-	virtual LPBYTE AllocPacket(PacketBase& Packet, CONST WORD Size) CONST;
-	virtual VOID FinishPacket(PacketBase& Packet) CONST;
-
-	virtual VOID RewindPacket(CONST PacketBase& Packet) CONST;
-
-	virtual PacketData *GetPacketData(PacketBase& Src) CONST;
+	static PacketData* CreatePacket(CONST WORD Size) {
+		return (PacketData*) CreatePacket(Size, GetProcessHeap(), NULL);
+	}
+	static VOID DestroyPacket(PacketData* CONST Packet) {
+		HeapFree(GetProcessHeap(), NULL, Packet);
+	}
 
 	virtual BOOL GetPacketType();
 
@@ -209,18 +209,16 @@ public:
 
 	BOOL ParseIncomingGame();
 
-	BOOL FixTrade(PacketBase &Src) CONST;
-	virtual BOOL FixEnterGame(PacketBase& Src) CONST { return TRUE; }
+	LPVOID RecordPacket(CONST PacketData *CONST Src) CONST;
+	virtual LPVOID RecordSession(CONST PacketData* CONST Src) CONST;
 
-	BOOL ParseIncomingReconnect();
 	VOID ConstructReconnect() CONST;
 
 	BOOL ParseSafeReconnect() CONST;
 
 	VOID ConstructVideoPing() CONST;
 
-	virtual VOID ConstructVideo() CONST;
-	virtual VOID RewindVideo() CONST;
+	VOID ConstructVideo() CONST;
 
 	//VOID ParseDebug(CONST LPCSTR Msg, CONST Packet &Src) CONST;
 
@@ -280,12 +278,12 @@ protected:
 	VOID Decrypt() CONST;
 	VOID Encrypt() CONST;
 
-public:
-	BOOL ParsePacket(CONST PacketBase& Packet) CONST;
-	LPBYTE AllocPacket(PacketBase &Packet, CONST WORD Size) CONST;
-	VOID FinishPacket(PacketBase& Packet) CONST;
+protected:
+	BOOL ParsePacket() CONST;
+	PacketData* AllocPacket(CONST WORD Size) CONST;
+	VOID FinishPacket(PacketData* CONST Packet) CONST;
 
-	PacketData *GetPacketData(PacketBase &Src) CONST;
+public:
 
 	BOOL ParseOutgoingLogin();
 	VOID ForwardLogin() CONST;
@@ -293,9 +291,6 @@ public:
 	BOOL ConstructGame() CONST;
 	BOOL ParseOutgoingGame();
 	BOOL ForwardGame() CONST;
-
-	VOID ConstructVideo() CONST;
-	VOID RewindVideo() CONST;
 };
 class Parser771: public Parser761 {
 public:
@@ -310,21 +305,19 @@ class Parser830: public Parser820 {
 	static DWORD GetChecksum() {
 		return adler32(1, Data, End - Data);
 	}
+
+protected:
+	BOOL ParsePacketBase() CONST;
+	PacketData* AllocPacketBase(CONST WORD Size) CONST;
+	VOID FinishPacketBase(PacketData* CONST Packet) CONST;
+
+	VOID FinishPacket(PacketData* CONST Packet) CONST;
+
 public:
 	STRING Account;
 	~Parser830() {
 		Account.Wipe();
 	}
-
-	BOOL ParsePacketBase(CONST PacketBase& Packet) CONST;
-	LPBYTE AllocPacketBase(PacketBase& Packet, CONST WORD Size) CONST;
-	VOID FinishPacketBase(PacketBase& Packet) CONST;
-
-	VOID FinishPacket(PacketBase& Packet) CONST;
-
-	VOID RewindPacket(CONST PacketBase& Packet) CONST;
-
-	PacketData *GetPacketData(PacketBase &Src) CONST;
 
 	BOOL ParseOutgoingLogin();
 
@@ -386,7 +379,7 @@ public:
 
 	VOID ConstructEnterPendingState() CONST;
 
-	BOOL FixEnterGame(PacketBase& Src) CONST;
+	LPVOID RecordSession(CONST PacketData* CONST Src) CONST;
 };
 class Parser1012: public Parser980 {
 protected:
@@ -402,7 +395,7 @@ protected:
 
 	BOOL ParsePlayerData();
 public:
-	BOOL FixEnterGame(PacketBase& Src) CONST;
+	LPVOID RecordSession(CONST PacketData* CONST Src) CONST;
 };
 class Parser1058 : public Parser1054 {
 protected:
@@ -410,7 +403,7 @@ protected:
 
 	BOOL ParsePlayerData();
 public:
-	BOOL FixEnterGame(PacketBase& Src) CONST;
+	LPVOID RecordSession(CONST PacketData* CONST Src) CONST;
 };
 class Parser1061 : public Parser1058 {
 protected:
@@ -460,7 +453,7 @@ protected:
 public:
 	VOID ConstructVideoLogin();
 
-	BOOL FixEnterGame(PacketBase& Src) CONST;
+	LPVOID RecordSession(CONST PacketData* CONST Src) CONST;
 };
 class Parser1082 : public Parser1080 {
 protected:

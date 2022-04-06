@@ -8,7 +8,7 @@ protected:
 
 	VOID Delete() CONST {
 		if (HANDLE(WINAPI * ReOpenFile)(HANDLE, DWORD, DWORD, DWORD) = (HANDLE(WINAPI*)(HANDLE, DWORD, DWORD, DWORD)) GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "ReOpenFile")) {
-			ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE);
+			CloseHandle(ReOpenFile(Handle, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_DELETE_ON_CLOSE));
 		}
 		throw bad_alloc();
 	}
@@ -68,13 +68,13 @@ public:
 		if (!ReadFile(Handle, Dest, Size, &Read, NULL)) throw bad_alloc();
 		if (Read != Size) throw bad_read();
 	}
-	template <typename TYPE> inline VOID Read(TYPE& Dest) CONST {
+	template <typename TYPE> inline TYPE& Read(TYPE& Dest) CONST {
 		Read(&Dest, sizeof(TYPE));
+		return Dest;
 	}
 	template <typename TYPE> inline TYPE Read() CONST {
 		TYPE Result;
-		Read(Result);
-		return Result;
+		return Read(Result);
 	}
 };
 
@@ -170,30 +170,34 @@ public:
 		if ((Data + sizeof(TYPE)) > End) throw bad_read();
 		return *(*(CONST TYPE**)&Data)++;
 	}
-	template <typename TYPE> inline VOID Read(TYPE& Dest) {
-		Dest = Read<TYPE>();
+	template <typename TYPE> inline TYPE& Read(TYPE& Dest) {
+		return Dest = Read<TYPE>();
 	}
 };
 
 extern "C" { // Modded LzmaLib for compression progress
 	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
-	INT __stdcall LzmaCompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD SrcLen, BYTE* Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPCVOID Callback);
-	INT __stdcall LzmaUncompress(BYTE* Dest, DWORD* DestLen, CONST BYTE* Src, DWORD* SrcLen, CONST BYTE* Props, DWORD PropsSize);
+	INT __stdcall LzmaCompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, DWORD SrcLen, LPBYTE Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPCVOID Callback);
+	INT __stdcall LzmaUncompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, LPDWORD SrcLen, LPCBYTE Props, DWORD PropsSize);
 }
 
-class LzmaBufferedFile : private WritingFile {
-	DWORD Skip;
+class LzmaBuffer {
+protected:
 	LPBYTE Buf;
+
+public:
+	inline LzmaBuffer(CONST LPBYTE New): Buf(New) { }
+	inline ~LzmaBuffer() {
+		delete[] Buf;
+	}
+};
+
+class LzmaBufferedFile : private LzmaBuffer, WritingFile {
+	DWORD Skip;
 	LPBYTE Data;
 
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header) : WritingFile(FileName), Skip(Header + 17), Buf(NULL) {
-		if (!(Buf = new(nothrow) BYTE[Size * 2 + Skip])) Delete();
-		Data = Buf + Size + Skip;
-	}
-	inline ~LzmaBufferedFile() {
-		delete[] Buf;
-	}
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): LzmaBuffer(new BYTE[Size * 2 + Header + 17]), WritingFile(FileName), Skip(Header + 17), Data(Buf + Size) { }
 
 	inline VOID Compress() {
 		Data = Buf;
@@ -216,23 +220,18 @@ public:
 	}
 };
 
-class LzmaMappedFile : public MappedFile {
-	LPBYTE Buf;
-
+class LzmaMappedFile : private LzmaBuffer, public MappedFile {
 public:
-	inline LzmaMappedFile(CONST LPCTSTR FileName) : MappedFile(FileName), Buf(NULL) {}
-	inline ~LzmaMappedFile() {
-		delete[] Buf;
-	}
+	inline LzmaMappedFile(CONST LPCTSTR FileName): LzmaBuffer(NULL), MappedFile(FileName) {}
 
 	inline VOID Uncompress(CONST BOOL AllowTruncated) {
 		DWORD OldSize = Read<DWORD>();
 		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
-		DWORD Size = Read <DWORD>();
-		DWORD Large = Read <DWORD>();
+		DWORD Size = Read<DWORD>();
+		DWORD Large = Read<DWORD>();
 		if (!Size || Large || !(OldSize = End - Data)) throw bad_read();
-		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &OldSize, Props, 5)) {
+		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &OldSize, Props, 5)) { // exception inside here leaves lzma data leak
 			if (!OldSize) throw bad_alloc();
 			if (!Size || !AllowTruncated) throw bad_read();
 		}
@@ -293,17 +292,18 @@ public:
 		return inflate(this, Z_NO_FLUSH) != Z_STREAM_END;
 	}
 	VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
-		next_out = LPBYTE(Dest);
-		avail_out = Size;
-		if (inflate(this, Z_SYNC_FLUSH) < Z_OK) throw bad_alloc();
-		if (avail_out) throw bad_read();
+		if (avail_out = Size) {
+			next_out = LPBYTE(Dest);
+			if (inflate(this, Z_SYNC_FLUSH) < Z_OK) throw bad_alloc();
+			if (avail_out) throw bad_read();
+		}
 	}
-	template <typename TYPE> inline VOID Read(TYPE& Dest) {
+	template <typename TYPE> inline TYPE& Read(TYPE& Dest) {
 		Read(&Dest, sizeof(TYPE));
+		return Dest;
 	}
 	template <typename TYPE> inline TYPE Read() {
 		TYPE Result;
-		Read(Result);
-		return Result;
+		return Read(Result);
 	}
 };

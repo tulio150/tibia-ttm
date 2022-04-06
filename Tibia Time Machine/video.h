@@ -15,13 +15,21 @@ namespace Video {
 
 	struct Session;
 	struct Packet: public PacketBase {
+		static HANDLE NewHeap;
 		DWORD Time;
 		Packet *Next;
 		Session *Login;
 
-		Packet(PacketBase& Src, CONST Packet *CONST Previous, CONST WORD Delay): PacketBase(Src), Time(Previous->Time + Delay), Next(NULL), Login(Previous->Login) {}
-		~Packet() {
-			delete[] LPBYTE(P);
+		LPVOID operator new(size_t Size, CONST PacketData* CONST Src) {
+			return Parser->RecordPacket(Src);
+		}
+		VOID operator delete(LPVOID Ptr, CONST PacketData* CONST Src) {
+			HeapFree(NewHeap, NULL, Ptr);
+		}
+		VOID operator delete(LPVOID Ptr);
+
+		Packet(CONST Packet *CONST Previous, CONST WORD Delay): Time(Previous->Time + Delay), Next(NULL), Login(Previous->Login) {
+			P = (PacketData*)(LPBYTE(this) + sizeof(Packet));
 		}
 
 		VOID EndSession();
@@ -30,21 +38,35 @@ namespace Video {
 		DWORD TimeInSession() CONST;
 		BOOL IsLast() CONST;
 
-		BOOL NeedEncrypt();
-		BOOL NeedDecrypt();
 	protected:
-		Packet(PacketBase& Src): PacketBase(Src), Time(0), Next(NULL), Login((Session *) this) {}
-		Packet(PacketBase& Src, CONST Packet *CONST Previous): PacketBase(Src), Time(Previous->Time + 1000), Next(NULL), Login((Session *) this) {}
+		Packet(): Time(0), Next(NULL), Login((Session *) this) { }
+		Packet(CONST Packet *CONST Previous): Time(Previous->Time + 1000), Next(NULL), Login((Session *) this) { }
 	};
 
 	struct Session: public Packet {
-		Packet *Encrypt;
 		Packet *Prev;
 		Packet *Last;
 		DWORD PlayerID;
+		HANDLE Heap;
 
-		Session(PacketBase& Src): Packet(Src), Encrypt(this), Prev(NULL), PlayerID(Parser->PlayerID) {}
-		Session(PacketBase& Src, Packet *CONST Previous): Packet(Src, Previous), Encrypt(this), Prev(Previous), PlayerID(Parser->PlayerID) {}
+		LPVOID operator new(size_t Size, CONST PacketData* CONST Src) {
+			NewHeap = HeapCreate(NULL, NULL, NULL);
+			if (!NewHeap) throw bad_alloc();
+			return Parser->RecordSession(Src);
+		}
+		VOID operator delete(LPVOID Ptr, CONST PacketData* CONST Src) {
+			HeapDestroy(NewHeap);
+		}
+		VOID operator delete(LPVOID Ptr) {
+			HeapDestroy(((Session*)Ptr)->Heap);
+		}
+
+		Session(): Packet(), Prev(NULL), PlayerID(Parser->PlayerID), Heap(NewHeap) {
+			P = (PacketData*)(LPBYTE(this) + sizeof(Session));
+		}
+		Session(Packet *CONST Previous): Packet(Previous), Prev(Previous), PlayerID(Parser->PlayerID), Heap(NewHeap) {
+			P = (PacketData*)(LPBYTE(this) + sizeof(Session));
+		}
 
 		DWORD SessionTime() CONST {
 			return Last->Time - Time;

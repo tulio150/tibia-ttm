@@ -185,28 +185,33 @@ namespace Proxy {
 		}
 		return TRUE;
 	}
+	VOID ConnectionSocket::Construct(PacketData* CONST New) {
+		P = New;
+	}
+	VOID ConnectionSocket::Discard() {
+		Parser->DestroyPacket(P);
+		Construct(NULL);
+	}
 	BOOL ConnectionSocket::GetPacket() {
 		if (!P) {
 			if (Receive(&PacketSize, 2)) {
-				Alloc(PacketSize);
-				if (!P) {
-					Socket::Close();
-					LastRecv = 0;
-					return FALSE;
-				}
-				if (!PacketSize) {
-					return TRUE;
+				if (PacketSize) {
+					try {
+						Construct(Parser->CreatePacket(PacketSize));
+					}
+					catch (bad_alloc&) {
+						Socket::Close();
+						LastRecv = 0;
+					}
 				}
 			}
 			return FALSE;
 		}
+		Parser->SetPacket(P);
 		return Receive(P->Data, P->Size);
 	}
-	BOOL ConnectionSocket::SendPacket(CONST PacketBase &Packet) {
-		if (!Packet) {
-			return FALSE;
-		}
-		while (!Send(&Packet, Packet->RawSize())) {
+	BOOL ConnectionSocket::SendPacket(CONST PacketData *CONST Packet) {
+		while (!Send(Packet, Packet->RawSize())) {
 			if (!BlockSend()) {
 				return FALSE;
 			}
@@ -269,14 +274,24 @@ namespace Proxy {
 		return Stop();
 	}
 
-	BOOL SendConstructed() {
-		BOOL Result = Client.SendPacket(Extra);
-		Extra.Discard();
-		return Result;
+	VOID SendConstructed() {
+		if (Client.SendPacket(&Extra)) {
+			Extra.Discard();
+		}
+		else {
+			Extra.Discard();
+			throw bad_alloc();
+		}
 	}
 	BOOL SendClientMessage(CONST BYTE Type, CONST UINT Error) {
-		Parser->ConstructMessage(Type, Error);
-		return SendConstructed();
+		try {
+			Parser->ConstructMessage(Type, Error);
+			SendConstructed();
+		}
+		catch (bad_alloc&) {
+			return FALSE;
+		}
+		return TRUE;
 	}
 
 	VOID HandleClientClose() {
@@ -302,9 +317,12 @@ namespace Proxy {
 		}
 	}
 	VOID HandleVideoLogin() {
-		Parser->ConstructVideoLogin();
-		SendConstructed();
-		Tibia::AutoPlayCharlist();
+		try {
+			Parser->ConstructVideoLogin();
+			SendConstructed();
+			Tibia::AutoPlayCharlist();
+		}
+		catch (bad_alloc&) { }
 		return HandleClientClose();
 	}
 	VOID HandleOutgoingLogin() {
@@ -341,7 +359,7 @@ namespace Proxy {
 			return HandleServerError(ID_LOGIN_ERROR, ERROR_CONNECT_HOST);
 		}
 		Parser->ForwardLogin();
-		if (!Server.SendPacket(Client)) {
+		if (!Server.SendPacket(&Client)) {
 			Client->Wipe();
 			return HandleServerClose();
 		}
@@ -358,20 +376,20 @@ namespace Proxy {
 				if (Tibia::HostLen) {
 					return HandleServerError(ID_LOGIN_ERROR, ERROR_OTSERVER_UPDATE);
 				}
-				if (!Client.SendPacket(Server)) {
+				if (!Client.SendPacket(&Server)) {
 					return HandleServerClose();
 				}
 				Server.Discard();
 				State = LOGIN_UP;
 				return;
 			}
-			Client.SendPacket(Server);
+			Client.SendPacket(&Server);
 			return HandleServerClose();
 		}
 	}
 	VOID HandleIncomingUpdate() {
 		if (Server.GetPacket()) {
-			if (!Client.SendPacket(Server)) {
+			if (!Client.SendPacket(&Server)) {
 				return HandleServerClose();
 			}
 			Server.Discard();
@@ -387,10 +405,13 @@ namespace Proxy {
 				State = GAME_CWW;
 			}
 			else {
-				if (Parser->ConstructTicket()){
-					if (!SendConstructed()) {
-						return HandleClientClose();
+				try {
+					if (Parser->ConstructTicket()) {
+						SendConstructed();
 					}
+				}
+				catch (bad_alloc&) {
+					return HandleClientClose();
 				}
 				State = GAME_CW;
 			}
@@ -400,10 +421,13 @@ namespace Proxy {
 		if (!Client.GetWorldname()) {
 			return HandleClientClose();
 		}
-		if (Parser->ConstructTicket()) {
-			if (!SendConstructed()) {
-				return HandleClientClose();
+		try {
+			if (Parser->ConstructTicket()) {
+				SendConstructed();
 			}
+		}
+		catch (bad_alloc&) {
+			return HandleClientClose();
 		}
 		State = GAME_CW;
 	}
@@ -446,12 +470,15 @@ namespace Proxy {
 	VOID HandleVideoCommand() {
 		if (Client.GetPacket()) {
 			if (Video::State == Video::PLAY) {
-				if (!Parser->ParseVideoCommand()) {
+				try {
+					if (!Parser->ParseVideoCommand()) {
+						return Video::Logout();
+					}
+				}
+				catch (bad_alloc&) {
 					return Video::Logout();
 				}
-				if (!State) {
-					return;
-				}
+				if (!State) return;
 			}
 			Client.Discard();
 		}
@@ -462,7 +489,7 @@ namespace Proxy {
 			return HandleServerError(ID_GAME_ERROR, ERROR_CONNECT_HOST);
 		}
 		if (Parser->ForwardGame()) {
-			if (!Server.SendPacket(Client)) {
+			if (!Server.SendPacket(&Client)) {
 				Client->Wipe();
 				return HandleServerClose();
 			}
@@ -482,11 +509,11 @@ namespace Proxy {
 	}
 	VOID HandleIncomingTicket() {
 		if (Server.GetPacket()) {
-			if (!((Parser841 *)Parser)->ParseTicket()) {
+			if (!((Parser841*)Parser)->ParseTicket()) {
 				Client->Wipe();
 				return HandleServerError(ID_GAME_ERROR, ERROR_CORRUPT_DATA);
 			}
-			if (!Server.SendPacket(Client)) {
+			if (!Server.SendPacket(&Client)) {
 				Client->Wipe();
 				return HandleServerClose();
 			}
@@ -498,7 +525,7 @@ namespace Proxy {
 	}
 	VOID HandleIncomingGame() {
 		if (Server.GetPacket()) {
-			if (!Client.SendPacket(Server)) {
+			if (!Client.SendPacket(&Server)) {
 				return HandleServerClose();
 			}
 			if (!Parser->ParseIncomingGame()) {
@@ -511,23 +538,20 @@ namespace Proxy {
 				if (!Parser->Pending) {
 					return HandleServerClose();
 				}
-				Server.Discard();
 			}
 			else {
 				if (Video::State == Video::WAIT) {
 					Video::Record();
 				}
-				else {
-					Server.Discard();
-				}
 			}
+			Server.Discard();
 			State = GAME_PLAY;
 		}
 	}
 
 	VOID HandleOutgoingPlay() {
 		if (Client.GetPacket()) {
-			if (!Server.SendPacket(Client)) {
+			if (!Server.SendPacket(&Client)) {
 				return HandleLogout();
 			}
 			Client.Discard();
@@ -535,20 +559,20 @@ namespace Proxy {
 	}
 	VOID HandleIncomingPlay() {
 		if (Server.GetPacket()) {
-			if (!Client.SendPacket(Server)) {
+			if (!Client.SendPacket(&Server)) {
 				return HandleLogout();
 			}
 			switch (Video::State) {
-				case Video::WAIT:
-					if (Parser->ParseIncomingGame() && Parser->EnterGame) {
-						return Video::Record();
-					}
-					break;
-				case Video::RECORD:
-					if (Parser->ParseIncomingGame()) {
-						return Video::RecordNext();
-					}
-					break; 
+			case Video::WAIT:
+				if (Parser->ParseIncomingGame() && Parser->EnterGame) {
+					Video::Record();
+				}
+				break;
+			case Video::RECORD:
+				if (Parser->ParseIncomingGame()) {
+					Video::RecordNext();
+				}
+				break;
 			}
 			Server.Discard();
 		}
@@ -563,8 +587,7 @@ namespace Proxy {
 
 	VOID HandleReconnect() {
 		if (!Extra.Open(WM_SOCKET_RECONNECT, socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))) {
-			Parser->ConstructMessage(ID_GAME_INFO, ERROR_RECONNECT);
-			if (!SendConstructed()) {
+			if (!SendClientMessage(ID_GAME_INFO, ERROR_RECONNECT)) {
 				return HandleServerClose();
 			}
 			return;
@@ -579,7 +602,7 @@ namespace Proxy {
 	}
 	VOID HandleOutgoingPlayReconnect() {
 		if (Client.GetPacket()) {
-			if (!Server.SendPacket(Client)) {
+			if (!Server.SendPacket(&Client)) {
 				return HandleReconnectClose();
 			}
 			Client.Discard();
@@ -587,7 +610,7 @@ namespace Proxy {
 	}
 	VOID HandleIncomingPlayReconnect() {
 		if (Server.GetPacket()) {
-			if (!Client.SendPacket(Server)) {
+			if (!Client.SendPacket(&Server)) {
 				return HandleReconnectClose();
 			}
 			Server.Discard();
@@ -596,8 +619,7 @@ namespace Proxy {
 
 	VOID HandleReconnectError() {
 		Extra.Close();
-		Parser->ConstructMessage(ID_GAME_INFO, ERROR_RECONNECT);
-		if (!SendConstructed()) {
+		if (!SendClientMessage(ID_GAME_INFO, ERROR_RECONNECT)) {
 			return HandleServerClose();
 		}
 		State = GAME_PLAY;
@@ -606,30 +628,40 @@ namespace Proxy {
 		if (Error) {
 			return HandleReconnectError();
 		}
-		if (Parser->ConstructGame()) {
-			if (!Extra.SendPacket(Extra)) {
-				Extra->Wipe();
-				return HandleReconnectError();
-			}
-			Extra->Wipe();
-			Extra.Discard();
-			State = RECONNECT_SW;
-		}
-		else {
-			if (Tibia::Version > 1100) {
-				if (!Extra.SendWorldname()) {
+		try {
+			if (Parser->ConstructGame()) {
+				if (!Extra.SendPacket(&Extra)) {
+					Extra->Wipe();
 					return HandleReconnectError();
 				}
+				Extra->Wipe();
+				Extra.Discard();
+				State = RECONNECT_SW;
 			}
-			State = RECONNECT_SWT;
+			else {
+				if (Tibia::Version > 1100) {
+					if (!Extra.SendWorldname()) {
+						return HandleReconnectError();
+					}
+				}
+				State = RECONNECT_SWT;
+			}
+		}
+		catch (bad_alloc&) {
+			return HandleReconnectError();
 		}
 	}
 	VOID HandleIncomingReconnectTicket() {
 		if (Extra.GetPacket()) {
-			if (!((Parser841 *)Parser)->ParseReconnectTicket()) {
+			try {
+				if (!((Parser841*)Parser)->ParseReconnectTicket()) {
+					return HandleReconnectError();
+				}
+			}
+			catch (bad_alloc&) {
 				return HandleReconnectError();
 			}
-			if (!Extra.SendPacket(Extra)) {
+			if (!Extra.SendPacket(&Extra)) {
 				Extra->Wipe();
 				return HandleReconnectError();
 			}
@@ -640,7 +672,7 @@ namespace Proxy {
 	}
 	VOID HandleIncomingReconnect() {
 		if (Extra.GetPacket()) {
-			if (!Parser->ParseIncomingReconnect()) {
+			if (!Parser->ParseIncomingGame()) {
 				return HandleReconnectError();
 			}
 			if (!Parser->PlayerData) {
@@ -652,28 +684,26 @@ namespace Proxy {
 			if (!Server.Switch(Extra, WM_SOCKET_SERVER)) {
 				return HandleServerError(ID_GAME_ERROR, ERROR_RECONNECT);
 			}
-			if (!Parser->EnterGame) {
-				if (!Parser->Pending) {
-					return HandleServerError(ID_GAME_ERROR, ERROR_RECONNECT);
-				}
-				((Parser980*)Parser)->ConstructEnterPendingState();
-				if (!SendConstructed()) {
-					return HandleServerClose();
-				}
-				Server.Discard();
-			}
-			else {
-				Parser->ConstructReconnect();
-				if (!SendConstructed()) {
-					return HandleServerClose();
-				}
-				if (Video::State == Video::WAIT) {
-					Video::Record();
+			try {
+				if (!Parser->EnterGame) {
+					if (!Parser->Pending) {
+						return HandleServerError(ID_GAME_ERROR, ERROR_RECONNECT);
+					}
+					((Parser980*)Parser)->ConstructEnterPendingState();
+					SendConstructed();
 				}
 				else {
-					Server.Discard();
+					Parser->ConstructReconnect();
+					SendConstructed();
+					if (Video::State == Video::WAIT) {
+						Video::Record();
+					}
 				}
 			}
+			catch (bad_alloc&) {
+				return HandleServerClose();
+			}
+			Server.Discard();
 			State = GAME_PLAY;
 		}
 	}
@@ -699,28 +729,26 @@ namespace Proxy {
 			if (!Client.Clean(WM_SOCKET_CLIENT)) {
 				return HandleServerClose();
 			}
-			if (!Parser->EnterGame) {
-				if (!Parser->Pending) {
-					return HandleServerError(ID_GAME_ERROR, ERROR_RECONNECT);
-				}
-				((Parser980*)Parser)->ConstructEnterPendingState();
-				if (!SendConstructed()) {
-					return HandleServerClose();
-				}
-				Server.Discard();
-			}
-			else {
-				Parser->ConstructReconnect();
-				if (!SendConstructed()) {
-					return HandleServerClose();
-				}
-				if (Video::State == Video::WAIT) {
-					Video::Record();
+			try {
+				if (!Parser->EnterGame) {
+					if (!Parser->Pending) {
+						return HandleServerError(ID_GAME_ERROR, ERROR_RECONNECT);
+					}
+					((Parser980*)Parser)->ConstructEnterPendingState();
+					SendConstructed();
 				}
 				else {
-					Server.Discard();
+					Parser->ConstructReconnect();
+					SendConstructed();
+					if (Video::State == Video::WAIT) {
+						Video::Record();
+					}
 				}
 			}
+			catch (bad_alloc&) {
+				return HandleServerClose();
+			}
+			Server.Discard();
 			State = GAME_PLAY;
 		}
 	}
