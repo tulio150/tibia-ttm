@@ -370,8 +370,7 @@ namespace Video {
 		File.Write(Last->Time);
 		File.Write(BYTE(FALSE));
 		File.Write(DWORD(0));
-		Current = First;
-		WORD Size = (*Current)->RawSize();
+		WORD Size = (*(Current = First))->RawSize();
 		if (Size < 2) Size = 0;
 		File.Write(Size);
 		File.Write(&(*Current), Size);
@@ -379,7 +378,7 @@ namespace Video {
 			if (Current->IsLast()) File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
 			File.Write(BYTE(FALSE));
 			File.Write(Current->Next->Time - Current->Time);
-			if ((Size = (*Current)->RawSize()) < 2) Size = 0;
+			if ((Size = (*(Current = Current->Next))->RawSize()) < 2) Size = 0;
 			File.Write(Size);
 			File.Write(&(*Current), Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
@@ -561,6 +560,7 @@ namespace Video {
 				AfterOpen(TRUE);
 			}
 			else {
+				Current->EndSession();
 				Current = Start;
 				Start = NULL;
 				Unload();

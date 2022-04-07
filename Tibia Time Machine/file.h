@@ -206,7 +206,10 @@ public:
 		DWORD Size = Data - Buf;
 		Data += Skip;
 		*(QWORD*)(Data - 8) = Size;
-		if (LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, 5, 0, 3, 0, 2, 32, 4, Callback)) Delete();
+		for (INT Level = 9; LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, Level, 0, 3, 0, 2, 32, 4, Callback); Level--) {
+			if (!Level) Delete();
+			Size = *(DWORD*)(Data - 8);
+		}
 		*(DWORD*)(Data - 17) = Size + 13;
 		WritingFile::Write(Data - Skip, Size + Skip);
 		WritingFile::Save();
@@ -224,7 +227,7 @@ class LzmaMappedFile : private LzmaBuffer, public MappedFile {
 public:
 	inline LzmaMappedFile(CONST LPCTSTR FileName): LzmaBuffer(NULL), MappedFile(FileName) {}
 
-	inline VOID Uncompress(CONST BOOL AllowTruncated) {
+	inline VOID Uncompress(CONST BOOL AllowTruncated) { // SOLVE ME
 		DWORD OldSize = Read<DWORD>();
 		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
