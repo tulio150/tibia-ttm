@@ -52,7 +52,13 @@ namespace Video {
 		LPVOID operator new(size_t Size, CONST PacketData* CONST Src) {
 			NewHeap = HeapCreate(NULL, NULL, NULL);
 			if (!NewHeap) throw bad_alloc();
-			return Parser->RecordSession(Src);
+			try {
+				return Parser->RecordSession(Src);
+			}
+			catch (...) {
+				HeapDestroy(NewHeap);
+				throw;
+			}
 		}
 		VOID operator delete(LPVOID Ptr, CONST PacketData* CONST Src) {
 			HeapDestroy(NewHeap);

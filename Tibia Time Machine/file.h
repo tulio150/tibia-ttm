@@ -175,39 +175,34 @@ public:
 	}
 };
 
-extern "C" { // Modded LzmaLib for compression progress
-	// *PropsSize must be = 5 // 0 <= Level <= 9, default = 5 // DictSize = 0, default to (1 << 24) // 0 <= lc <= 8, default = 3 // 0 <= lp <= 4, default = 0 // 0 <= pb <= 4, default = 2 // 5 <= fb <= 273, default = 32 // NumThreads = 1 or 2, default = 2
-	INT __stdcall LzmaCompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, DWORD SrcLen, LPBYTE Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LPCVOID Callback);
+extern "C" {
+	typedef INT(*LzmaProgress)(LPVOID p, QWORD inSize, QWORD outSize, QWORD srcLen); // Modded LzmaLib for compression progress
+	INT __stdcall LzmaCompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, DWORD SrcLen, LPBYTE Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LzmaProgress Callback);
 	INT __stdcall LzmaUncompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, LPDWORD SrcLen, LPCBYTE Props, DWORD PropsSize);
 }
 
-class LzmaBuffer {
-protected:
-	LPBYTE Buf;
-
-public:
-	inline LzmaBuffer(CONST LPBYTE New): Buf(New) { }
-	inline ~LzmaBuffer() {
-		delete[] Buf;
-	}
-};
-
-class LzmaBufferedFile : private LzmaBuffer, WritingFile {
+class LzmaBufferedFile : private WritingFile {
 	DWORD Skip;
+	LPBYTE Buf;
 	LPBYTE Data;
 
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): LzmaBuffer(new BYTE[Size * 2 + Header + 17]), WritingFile(FileName), Skip(Header + 17), Data(Buf + Size) { }
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName) {
+		Data = (Buf = LPBYTE(VirtualAlloc(NULL, Size * 2 + (Skip = Header + 17), MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) + Size;
+		if (!Buf) Delete();
+	}
+	inline ~LzmaBufferedFile() {
+		VirtualFree(Buf, NULL, MEM_RELEASE);
+	}
 
 	inline VOID Compress() {
 		Data = Buf;
 	}
-	inline VOID Save(CONST LPCVOID Callback) {
+	inline VOID Save(CONST LzmaProgress Callback) {
 		DWORD Size = Data - Buf;
-		Data += Skip;
-		*(QWORD*)(Data - 8) = Size;
-		for (INT Level = 9; LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, Level, 0, 3, 0, 2, 32, 4, Callback); Level--) {
-			if (!Level) Delete();
+		*(QWORD*)((Data += Skip) - 8) = Size;
+		for (INT Level = 9; LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, Level, 0, -1, -1, -1, -1, -1, Callback); Level--) {
+			if (Size || !Level) Delete();
 			Size = *(DWORD*)(Data - 8);
 		}
 		*(DWORD*)(Data - 17) = Size + 13;
@@ -223,19 +218,25 @@ public:
 	}
 };
 
-class LzmaMappedFile : private LzmaBuffer, public MappedFile {
+class LzmaMappedFile : public MappedFile {
+	LPBYTE Buf;
+
 public:
-	inline LzmaMappedFile(CONST LPCTSTR FileName): LzmaBuffer(NULL), MappedFile(FileName) {}
+	inline LzmaMappedFile(CONST LPCTSTR FileName): MappedFile(FileName), Buf(NULL) { }
+	inline ~LzmaMappedFile() {
+		VirtualFree(Buf, NULL, MEM_RELEASE);
+	}
 
 	inline VOID Uncompress(CONST BOOL AllowTruncated) { // SOLVE ME
-		DWORD OldSize = Read<DWORD>();
-		if (Data + OldSize > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
+		DWORD Compressed = Read<DWORD>();
+		if (Data + Compressed > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size = Read<DWORD>();
 		DWORD Large = Read<DWORD>();
-		if (!Size || Large || !(OldSize = End - Data)) throw bad_read();
-		if (LzmaUncompress(Buf = new BYTE[Size], &Size, Data, &OldSize, Props, 5)) { // exception inside here leaves lzma data leak
-			if (!OldSize) throw bad_alloc();
+		if (!Size || Large || !(Compressed = End - Data)) throw bad_read();
+		if (!(Buf = LPBYTE(VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)))) throw bad_alloc();
+		if (LzmaUncompress(Buf, &Size, Data, &Compressed, Props, 5)) { // exception inside here leaves lzma data leak
+			if (!Compressed) throw bad_alloc();
 			if (!Size || !AllowTruncated) throw bad_read();
 		}
 		End = (Data = Buf) + Size;

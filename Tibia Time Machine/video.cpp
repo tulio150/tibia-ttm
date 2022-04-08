@@ -892,8 +892,7 @@ namespace Video {
 
 	VOID UnloadClose() {
 		Current = First;
-		First = NULL;
-		Last = NULL;
+		First = Last = NULL;
 		Unload();
 		AfterClose();
 	}
@@ -983,7 +982,7 @@ namespace Video {
 	VOID Record() {
 		try {
 			if (Last && 1000 > INFINITE - Last->Time) throw bad_alloc();
-			Current = (Last ? Last->Next = new(&Proxy::Server) Session(Last) : First = new(&Proxy::Server) Session());
+			Current = (Last ? (Last->Next = new(&Proxy::Server) Session(Last)) : (First = new(&Proxy::Server) Session()));
 			Timer::Start();
 			State = RECORD;
 			TimeStr::SetTime(Current->Time);
