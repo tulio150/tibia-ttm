@@ -217,7 +217,7 @@ public:
 		DWORD Size = Data - Buf;
 		WriteCallback = WriteThis;
 		if (LzmaCompress(LPBYTE(this), NULL, Buf, Size, NULL, 5, 5, 0, -1, -1, -1, -1, -1, Callback)) Delete();
-		SetFilePointer(Handle, Skip, NULL, SEEK_SET);
+		if (SetFilePointer(Handle, Skip, NULL, SEEK_SET) != Skip) Delete();
 		WritingFile::Write(Compressed);
 		WritingFile::Save();
 	}
