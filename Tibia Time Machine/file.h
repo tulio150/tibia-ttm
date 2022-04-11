@@ -181,28 +181,28 @@ extern "C" {
 	INT __stdcall LzmaUncompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, LPDWORD SrcLen, LPCBYTE Props, DWORD PropsSize);
 }
 
-struct ISeqOutStream {
-	SIZE_T(*WriteCallback)(ISeqOutStream* This, LPCVOID Src, DWORD Size);
+struct LzmaStream {
+	DWORD(*WriteCallback)(LzmaStream* This, LPCVOID Src, DWORD Size);
 };
 
-class LzmaBufferedFile : private ISeqOutStream, WritingFile {
-	DWORD Compressed;
+class LzmaBufferedFile : private LzmaStream, WritingFile {
+	DWORD Size;
 	DWORD Skip;
 	LPBYTE Buf;
 	LPBYTE Data;
 
-	static SIZE_T WriteThis(ISeqOutStream* This, LPCVOID Src, DWORD Size) {
-		if (!WriteFile(((LzmaBufferedFile*)This)->Handle, Src, Size, &Size, NULL)) {
-			return 0;
+	static DWORD WriteThis(LzmaStream* This, LPCVOID Src, DWORD Size) {
+		if (WriteFile(((LzmaBufferedFile*)This)->Handle, Src, Size, &Size, NULL)) {
+			((LzmaBufferedFile*)This)->Size += Size;
+			return Size;
 		}
-		((LzmaBufferedFile*)This)->Compressed += Size;
-		return Size;
+		return 0;
 	}
 
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName), Compressed(0) {
-		Data = (Buf = LPBYTE(VirtualAlloc(NULL, Size + (Skip = Header), MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) + Size;
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName), Size(0), Skip(Header), Buf(LPBYTE(VirtualAlloc(NULL, Size + Header, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
 		if (!Buf) Delete();
+		Data = Buf + Size;
 	}
 	inline ~LzmaBufferedFile() {
 		VirtualFree(Buf, NULL, MEM_RELEASE);
@@ -214,11 +214,10 @@ public:
 	inline VOID Save(CONST LzmaProgress Callback) {
 		WritingFile::Write(Data, Skip);
 		WritingFile::Write(DWORD(0));
-		DWORD Size = Data - Buf;
 		WriteCallback = WriteThis;
-		if (LzmaCompress(LPBYTE(this), NULL, Buf, Size, NULL, 5, 5, 0, -1, -1, -1, -1, -1, Callback)) Delete();
+		if (LzmaCompress(LPBYTE(this), NULL, Buf, Data - Buf, NULL, 5, 5, 0, -1, -1, -1, -1, -1, Callback)) Delete();
 		if (SetFilePointer(Handle, Skip, NULL, SEEK_SET) != Skip) Delete();
-		WritingFile::Write(Compressed);
+		WritingFile::Write(Size);
 		WritingFile::Save();
 	}
 	inline VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
