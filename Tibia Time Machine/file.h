@@ -176,19 +176,32 @@ public:
 };
 
 extern "C" {
-	typedef INT(*LzmaProgress)(LPVOID p, QWORD inSize, QWORD outSize, QWORD srcLen); // Modded LzmaLib for compression progress
+	typedef INT(*LzmaProgress)(LPVOID p, QWORD inSize, QWORD outSize, QWORD srcLen); // Modded LzmaLib for compression progress and output to stream
 	INT __stdcall LzmaCompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, DWORD SrcLen, LPBYTE Props, DWORD PropsSize, INT Level, DWORD DictSize, INT lc, INT lp, INT pb, INT fb, INT Threads, LzmaProgress Callback);
 	INT __stdcall LzmaUncompress(LPBYTE Dest, LPDWORD DestLen, LPCBYTE Src, LPDWORD SrcLen, LPCBYTE Props, DWORD PropsSize);
 }
 
-class LzmaBufferedFile : private WritingFile {
+struct ISeqOutStream {
+	SIZE_T(*WriteCallback)(ISeqOutStream* This, LPCVOID Src, DWORD Size);
+};
+
+class LzmaBufferedFile : private ISeqOutStream, WritingFile {
+	DWORD Compressed;
 	DWORD Skip;
 	LPBYTE Buf;
 	LPBYTE Data;
 
+	static SIZE_T WriteThis(ISeqOutStream* This, LPCVOID Src, DWORD Size) {
+		if (!WriteFile(((LzmaBufferedFile*)This)->Handle, Src, Size, &Size, NULL)) {
+			return 0;
+		}
+		((LzmaBufferedFile*)This)->Compressed += Size;
+		return Size;
+	}
+
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName) {
-		Data = (Buf = LPBYTE(VirtualAlloc(NULL, Size * 2 + (Skip = Header + 17), MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) + Size;
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName), Compressed(0) {
+		Data = (Buf = LPBYTE(VirtualAlloc(NULL, Size + (Skip = Header), MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) + Size;
 		if (!Buf) Delete();
 	}
 	inline ~LzmaBufferedFile() {
@@ -199,14 +212,13 @@ public:
 		Data = Buf;
 	}
 	inline VOID Save(CONST LzmaProgress Callback) {
+		WritingFile::Write(Data, Skip);
+		WritingFile::Write(DWORD(0));
 		DWORD Size = Data - Buf;
-		*(QWORD*)((Data += Skip) - 8) = Size;
-		for (INT Level = 9; LzmaCompress(Data, &Size, Buf, Size, Data - 13, 5, Level, 0, -1, -1, -1, -1, -1, Callback); Level--) {
-			if (Size || !Level) Delete();
-			Size = *(DWORD*)(Data - 8);
-		}
-		*(DWORD*)(Data - 17) = Size + 13;
-		WritingFile::Write(Data - Skip, Size + Skip);
+		WriteCallback = WriteThis;
+		if (LzmaCompress(LPBYTE(this), NULL, Buf, Size, NULL, 5, 5, 0, -1, -1, -1, -1, -1, Callback)) Delete();
+		SetFilePointer(Handle, Skip, NULL, SEEK_SET);
+		WritingFile::Write(Compressed);
 		WritingFile::Save();
 	}
 	inline VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
