@@ -193,8 +193,8 @@ namespace Video {
 			Current = First = new(&Src) Session();
 		}
 		while (File.Peek()) {
-			WORD Delay;
 			switch (File.Read<BYTE>()) {
+				WORD Delay;
 			case TRUE:
 				if (1000 > TotalTime - Current->Time) throw bad_read();
 				if (!Src.Read(File) || !Parser->EnterGame) throw bad_read();
@@ -393,9 +393,9 @@ namespace Video {
 		Converter Src;
 		Src.Time = 0;
 		while (File.Peek()) {
-			WORD Size;
-			BYTE Data[0xFFFF];
 			switch (File.Read<BYTE>()) {
+				WORD Size;
+				BYTE Data[0xFFFF];
 			case TRUE: break;
 			case FALSE:
 				Src.Time += File.Read<DWORD>();
