@@ -47,9 +47,10 @@ GZip compressed data:
 		0: Received data chunk
 			[4 bytes] Delay from previous chunk
 			[2 bytes] Received size
-			0: End of recording
+			0: End of recording (not required, and kept between merged files)
 			[x bytes] Received data
 		1: Play marker
+		EOF: End of recording
 
 ---------------------------------------------------------------------
 TibiaCam .cam:
@@ -58,7 +59,7 @@ TibiaCam .cam:
 [4 bytes] Tibia version (X.YZ is 0X 0Y 0Z 00)
 [4 bytes] Metadata size
 [x bytes] Metadata
-[4 bytes] LZMA Compressed data size
+[4 bytes] LZMA Compressed data size (sometimes include +13 bytes of the header)
 [5 bytes] LZMA Parameters
 [8 bytes] LZMA Decompressed data size
 LZMA Compressed data:
@@ -121,7 +122,7 @@ GZip compressed data:
 			[4 bytes] Delay
 		51: Video header
 			[2 bytes] Data size (>= 34)
-			[2 bytes] Tibia version (822)
+			[2 bytes] Tibia version (822 only)
 			[4 bytes] Recording time
 			[1 bytes] Player name size
 			[x bytes] Player name
@@ -142,7 +143,7 @@ GZip compressed data:
 			[2 bytes] Players killed during recording (0 for uncalculated)
 		64: Received data
 			[2 bytes] Data size
-			[x bytes] Received data
+			[x bytes] Received data (encrypted as received)
 		EOF: End of recording
 [4 bytes] Uncompressed data size
 
@@ -206,7 +207,7 @@ DEFLATE compressed data:
 				[2 bytes] Title size
 				[x bytes] Title
 				[2 bytes] Message size
-				[x bytes] Message data
+				[x bytes] Message
 
 ---------------------------------------------------------------------
 Tibia XCAM .xcam:

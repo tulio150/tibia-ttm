@@ -12,7 +12,7 @@ protected:
 		}
 		throw bad_alloc();
 	}
-	VOID Rewind(CONST DWORD Skip) {
+	VOID Rewind(CONST DWORD Skip) CONST {
 		if (SetFilePointer(Handle, Skip, NULL, SEEK_SET) != Skip) Delete();
 	}
 
@@ -98,7 +98,7 @@ public:
 
 	inline VOID Save() {
 		Flush();
-		WritingFile::Save();
+		return WritingFile::Save();
 	}
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		if (Size > (sizeof(Buffer) - Pos)) {
@@ -157,7 +157,7 @@ public:
 		UnmapViewOfFile(Ptr);
 	}
 
-	inline BOOL Peek() {
+	inline BOOL Peek() CONST {
 		return Data < End;
 	}
 	inline LPCBYTE Skip(CONST DWORD Size) {
@@ -199,7 +199,7 @@ class LzmaBufferedFile : private LzmaStream, WritingFile {
 	}
 
 public:
-	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName), Skip(Header), Buf(LPBYTE(VirtualAlloc(NULL, Size + Header, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
+	inline LzmaBufferedFile(CONST LPCTSTR FileName, CONST DWORD Size, CONST DWORD Header): WritingFile(FileName), Skip(Header), Buf(LPBYTE(VirtualAlloc(NULL, Size + Header, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
 		if (!Buf) Delete();
 		Data = Buf + Size;
 	}

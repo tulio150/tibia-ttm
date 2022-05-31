@@ -160,16 +160,15 @@ namespace Video {
 
 	struct FilePacket : private NeedParser, PacketBase {
 		BOOL Read(MappedFile& File) {
-			if (!(P = (PacketData *) &File.Read<WORD>())->Size) return FALSE;
+			Parser->SetPacket(P = (PacketData*)&File.Read<WORD>());
 			File.Skip(P->Size);
-			Parser->SetPacket(P);
-			return Parser->GetPacketType();
+			return P->Size && Parser->GetPacketType();
 		}
 	};
 
 	VOID OpenTTM(BOOL Override, CONST HWND Parent) {
 		MappedFile File(FileName);
-		WORD Version = File.Read<WORD>();
+		CONST WORD Version = File.Read<WORD>();
 		BYTE HostLen;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
@@ -354,7 +353,7 @@ namespace Video {
 		Packets -= 57;
 		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
 		for (DWORD i = 0; i < Packets; i++) {
-			WORD Size = File.Read<WORD>();
+			CONST WORD Size = File.Read<WORD>();
 			File.Read(Src.Time);
 			Src.Read(File.Skip(DWORD(Size) + 4), Size); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			MainWnd::Progress_Set(i, Packets);
@@ -389,7 +388,7 @@ namespace Video {
 		GzipMappedFile File(FileName);
 		if (File.Read<WORD>() != 2) throw ERROR_CORRUPT_VIDEO;
 		BeforeOpen(Override, Parent, File.Read<WORD>(), NULL, NULL, PORT);
-		DWORD TotalTime = File.Read<DWORD>();
+		CONST DWORD TotalTime = File.Read<DWORD>();
 		Converter Src;
 		Src.Time = 0;
 		while (File.Peek()) {
@@ -422,7 +421,7 @@ namespace Video {
 		File.Write(Packets);
 		Current = First;
 		do {
-			DWORD Size = (*Current)->RawSize();
+			CONST DWORD Size = (*Current)->RawSize();
 			File.Write(Size);
 			File.Write(Current->Time);
 			File.Write(&(*Current), Size);
@@ -452,8 +451,8 @@ namespace Video {
 		MappedFile File(FileName);
 		BYTE RecVersion;
 		if (File.Read(RecVersion) < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
-		BYTE Encryption = File.Read<BYTE>();
-		if (!Encryption || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
+		BYTE Encryption;
+		if (!File.Read(Encryption) || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
 			Tibia::SetHost(GuessVersion(RecVersion, Encryption), NULL, LPCTSTR(NULL), PORT);
 			MainWnd::Progress_Pause();
@@ -476,7 +475,7 @@ namespace Video {
 				}
 			}
 			for (DWORD i = 0; i < Packets; i++) {
-				WORD Size = File.Read<WORD>();
+				CONST WORD Size = File.Read<WORD>();
 				File.Read(Src.Time);
 				CONST LPCBYTE Encrypted = File.Skip(Size);
 				if (File.Read<DWORD>() != adler32(1, Encrypted, Size) && !Override) throw bad_read();
@@ -489,7 +488,7 @@ namespace Video {
 					Data[i] = Encrypted[i] - Key + Rem;
 				}
 				DWORD Decrypted = Size;
-				if (RecVersion > 4 && Decrypted && (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Decrypted) || !Decrypted)) throw bad_read();
+				if (RecVersion > 4 && Decrypted && (!CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Decrypted))) throw bad_read();
 				Src.Read(Data, Decrypted);
 				MainWnd::Progress_Set(i, Packets);
 			}
@@ -497,7 +496,7 @@ namespace Video {
 		else {
 			if (!Packets) throw ERROR_CORRUPT_VIDEO;
 			for (DWORD i = 0; i < Packets; i++) {
-				DWORD Size = File.Read<DWORD>();
+				CONST DWORD Size = File.Read<DWORD>();
 				File.Read(Src.Time);
 				Src.Read(File.Skip(Size), Size);
 				MainWnd::Progress_Set(i, Packets);
