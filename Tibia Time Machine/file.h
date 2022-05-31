@@ -116,45 +116,33 @@ public:
 };
 
 class MappedFile : private ReadingFile {
-	LPVOID Filter;
-	LPCVOID Ptr;
-
-	static LONG WINAPI ExceptionFilter(EXCEPTION_POINTERS* Info) {
-		if (Info->ExceptionRecord->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) {
-			if (Info->ExceptionRecord->NumberParameters > 1) {
-				if (Info->ExceptionRecord->ExceptionInformation[0] == EXCEPTION_READ_FAULT) {
-					throw bad_alloc();
-				}
-			}
-		}
-		return EXCEPTION_CONTINUE_SEARCH;
-	}
+	LPVOID Ptr;
 
 protected:
 	LPCBYTE Data;
 	LPCBYTE End;
 
-	inline VOID Unmap() {
-		RemoveVectoredExceptionHandler(Filter);
-		UnmapViewOfFile(Ptr);
-		Ptr = Filter = NULL;
+	inline VOID Remap(CONST LPVOID Buf) {
+		VirtualFree(Ptr, NULL, MEM_RELEASE);
+		Ptr = Buf;
 	}
 
 public:
 	inline MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) {
-		CONST DWORD Size = GetSize();
-		if (!Size) throw bad_alloc();
-		CONST HANDLE Map = CreateFileMapping(Handle, NULL, PAGE_READONLY, NULL, Size, NULL);
-		if (!Map) throw bad_alloc();
-		Ptr = MapViewOfFile(Map, FILE_MAP_READ, NULL, NULL, Size);
-		CloseHandle(Map);
-		if (!Ptr) throw bad_alloc();
-		End = (Data = LPCBYTE(Ptr)) + Size;
-		Filter = AddVectoredExceptionHandler(FALSE, ExceptionFilter);
+		if (CONST DWORD Size = GetSize()) {
+			if (Ptr = VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)) {
+				DWORD Read;
+				if (ReadFile(Handle, Ptr, Size, &Read, NULL) && Read == Size) {
+					End = (Data = LPCBYTE(Ptr)) + Size;
+					return;
+				}
+				VirtualFree(Ptr, NULL, MEM_RELEASE);
+			}
+		}
+		throw bad_alloc();
 	}
 	inline ~MappedFile() {
-		RemoveVectoredExceptionHandler(Filter);
-		UnmapViewOfFile(Ptr);
+		VirtualFree(Ptr, NULL, MEM_RELEASE);
 	}
 
 	inline BOOL Peek() CONST {
@@ -233,26 +221,28 @@ public:
 };
 
 class LzmaMappedFile : public MappedFile {
-	LPBYTE Buf;
-
 public:
-	inline LzmaMappedFile(CONST LPCTSTR FileName): MappedFile(FileName), Buf(NULL) { }
-	inline ~LzmaMappedFile() {
-		VirtualFree(Buf, NULL, MEM_RELEASE);
-	}
+	inline LzmaMappedFile(CONST LPCTSTR FileName): MappedFile(FileName) { }
 
-	inline VOID Uncompress(CONST BOOL AllowTruncated) { // SOLVE ME
+	inline VOID Uncompress(CONST BOOL AllowTruncated) {
 		if (Data + Read<DWORD>() > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size, Compressed;
 		if (!Read(Size) || Read<DWORD>() || !(Compressed = End - Data)) throw bad_read();
-		if (!(Buf = LPBYTE(VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)))) throw bad_alloc();
-		if (LzmaUncompress(Buf, &Size, Data, &Compressed, Props, 5)) { // exception inside here leaves lzma data leak
-			if (!Compressed) throw bad_alloc();
-			if (!Size || !AllowTruncated) throw bad_read();
+		LPBYTE Buf = LPBYTE(VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+		if (!Buf) throw bad_alloc();
+		if (LzmaUncompress(Buf, &Size, Data, &Compressed, Props, 5)) {
+			if (!Compressed) {
+				VirtualFree(Buf, NULL, MEM_RELEASE);
+				throw bad_alloc();
+			}
+			if (!Size || !AllowTruncated) {
+				VirtualFree(Buf, NULL, MEM_RELEASE);
+				throw bad_read();
+			}
 		}
 		End = (Data = Buf) + Size;
-		return Unmap();
+		return Remap(Buf);
 	}
 };
 
