@@ -2153,13 +2153,6 @@ namespace Video {
 			return Logout();
 		}
 	}
-	VOID PartialUnload() {
-		Packet* Next;
-		do {
-			Next = Current->Next;
-			delete Current;
-		} while (Current = Next);
-	}
 	VOID CutEnd() {
 		CONST INT LoginNumber = ListBox_GetCurSel(MainWnd::ListSessions);
 		if (Current->IsLast()) {
