@@ -12,8 +12,8 @@ protected:
 		}
 		throw bad_alloc();
 	}
-	VOID Rewind(CONST DWORD Skip) CONST {
-		if (SetFilePointer(Handle, Skip, NULL, SEEK_SET) != Skip) Delete();
+	inline VOID Rewind(CONST DWORD Skip) CONST {
+		if (SetFilePointer(Handle, Skip, NULL, FILE_BEGIN) != Skip) Delete();
 	}
 
 public:
@@ -60,11 +60,10 @@ public:
 	}
 
 	inline BOOL Peek() CONST {
-		return SetFilePointer(Handle, 0, NULL, SEEK_CUR) < GetSize();
+		return SetFilePointer(Handle, 0, NULL, FILE_CURRENT) < GetSize();
 	}
 	inline VOID Skip(CONST DWORD Size) CONST {
-		LARGE_INTEGER Position = { Size, 0 };
-		if (!SetFilePointerEx(Handle, Position, NULL, FILE_CURRENT)) throw bad_read();
+		if (!SetFilePointer(Handle, Size, NULL, FILE_CURRENT) == INVALID_SET_FILE_POINTER) throw bad_read();
 	}
 	inline VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
 		DWORD Read;
@@ -103,9 +102,9 @@ public:
 	VOID Write(CONST LPCVOID Src, CONST DWORD Size) {
 		if (Size > (sizeof(Buffer) - Pos)) {
 			Flush();
-			if (Size >= sizeof(Buffer)) {
-				return WritingFile::Write(Src, Size);
-			}
+		}
+		if (Size >= sizeof(Buffer)) {
+			return WritingFile::Write(Src, Size);
 		}
 		CopyMemory(Buffer + Pos, Src, Size);
 		Pos += Size;
@@ -128,7 +127,7 @@ protected:
 	}
 
 public:
-	inline MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) {
+	inline MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) { // memory mapping causes SEH, emulate instead
 		if (CONST DWORD Size = GetSize()) {
 			if (Ptr = VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)) {
 				DWORD Read;
@@ -201,7 +200,7 @@ public:
 	inline VOID Save(CONST LzmaProgress Callback) {
 		WritingFile::Write(Data, Skip);
 		WritingFile::Write(Size = 0);
-		WriteCallback = WriteThis;
+		WriteCallback = WriteThis; // modded lzma api writes directly to the file
 		for (DWORD Level = 9; LzmaCompress(LPBYTE(this), NULL, Buf, Data - Buf, NULL, 5, Level, 0, -1, -1, -1, -1, -1, Callback); Level--) {
 			if (!Level) Delete();
 			Rewind(Skip);
