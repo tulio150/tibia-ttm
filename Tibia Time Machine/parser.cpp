@@ -85,17 +85,6 @@ BOOL Parser700::FindChar(CONST PSTRING &Name) {
 	}
 	return FALSE;
 }
-BOOL Parser700::FindWorld(CONST LPCSTR Name, CONST DWORD Len) {
-	if (!Charlist) {
-		return RSTRING(PLAY_VIDEO).Compare(Name, Len);
-	}
-	for (BYTE Char = 0; Char < Chars; Char++) {
-		if (Charlist[Char].WorldName.Compare(Name, Len)) {
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
 
 BOOL Parser700::ParsePacketBase() CONST{
 	return TRUE;

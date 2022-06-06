@@ -167,11 +167,11 @@ namespace Proxy {
 		if (Receive(Worldname, 41)) {
 			return FALSE;
 		}
-		if (LastRecv-- <= 0) {
+		if (LastRecv <= 0) {
 			return FALSE;
 		}
 		Received = 0;
-		return Worldname[LastRecv] == '\n' && Parser->FindWorld(Worldname, LastRecv);
+		return Worldname[LastRecv - 1] == '\n';
 	}
 	BOOL ConnectionSocket::SendWorldname() {
 		CHAR Worldname[41];

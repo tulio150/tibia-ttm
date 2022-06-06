@@ -191,7 +191,6 @@ public:
 
 	static BOOL ClearChars();
 	static BOOL FindChar(CONST PSTRING &Name);
-	static BOOL FindWorld(CONST LPCSTR Name, CONST DWORD Len);
 
 	VOID ConstructMessage(CONST BYTE Type, CONST UINT ID) CONST;
 

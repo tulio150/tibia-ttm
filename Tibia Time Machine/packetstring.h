@@ -27,14 +27,6 @@ struct RSTRING {
 	LPCWSTR Data;
 
 	inline RSTRING(CONST UINT ID): Len(LoadStringW(NULL, ID, LPWSTR(&Data), 0)) {}
-
-	inline BOOL Compare(CONST LPCSTR Cmp, DWORD CmpLen) CONST {
-		if (Len != CmpLen) return FALSE;
-		while (--CmpLen) {
-			if (CHAR(Data[CmpLen]) != Cmp[CmpLen]) return FALSE;
-		}
-		return TRUE;
-	}
 };
 struct STRING {
 	WORD Len;
@@ -73,9 +65,6 @@ struct STRING {
 	inline VOID Wipe() {
 		SecureZeroMemory(Data, Len);
 		Len = 0;
-	}
-	inline BOOL Compare(CONST LPCSTR Cmp, CONST WORD CmpLen) CONST {
-		return Len == CmpLen && !DiffMemory(Data, Cmp, Len);
 	}
 };
 
