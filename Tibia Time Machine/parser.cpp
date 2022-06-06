@@ -73,13 +73,24 @@ BOOL Parser700::ClearChars() {
 	delete [] Charlist;
 	return TRUE;
 }
-BOOL Parser700::FindChar(CONST PSTRING &Name) { //TODO: check 1100+ worldname
+BOOL Parser700::FindChar(CONST PSTRING &Name) {
 	if (!Charlist) {
 		return Name == "Time Machine";
 	}
 	for (BYTE Char = 0; Char < Chars; Char++) {
 		if (Charlist[Char].Name == Name) {
 			Character = Charlist + Char;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+BOOL Parser700::FindWorld(CONST LPCSTR Name, CONST DWORD Len) {
+	if (!Charlist) {
+		return RSTRING(PLAY_VIDEO).Compare(Name, Len);
+	}
+	for (BYTE Char = 0; Char < Chars; Char++) {
+		if (Charlist[Char].WorldName.Compare(Name, Len)) {
 			return TRUE;
 		}
 	}
@@ -350,12 +361,12 @@ VOID Parser761::ForwardLogin() CONST {
 	FinishRSA();
 	FinishPacketBase(&Proxy::Client);
 }
-VOID Parser1072::ForwardLogin() CONST {
+/*VOID Parser1072::ForwardLogin() CONST { // needed on global only
 	FinishRSA();
-	//Data = End - 128; // skip extra data and go to the last 128-byte RSA block
-	//ProxyRSA(); // needed on global only
+	Data = End - 128; // skip extra data and go to the last 128-byte RSA block
+	ProxyRSA();
 	FinishPacketBase(&Proxy::Client);
-}
+}/**/
 
 VOID Parser700::ConstructVideoLoginBase(CONST RSTRING &Str) {
 	GetByte() = 0x64;
@@ -738,7 +749,7 @@ BOOL Parser1012::ParseCharacterListBase(CONST WORD PremDays) CONST {
 				break;
 			}
 		}
-		if (!Charlist[Char].WorldName.Data || !Charlist[Char].HostName.Data) {
+		if (!Charlist[Char].HostName.Data) {
 			Chars = 0;
 			delete[] Charlist;
 			delete[] Worldlist;

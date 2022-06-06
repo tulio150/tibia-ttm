@@ -63,7 +63,7 @@ public:
 		return SetFilePointer(Handle, 0, NULL, FILE_CURRENT) < GetSize();
 	}
 	inline VOID Skip(CONST DWORD Size) CONST {
-		if (!SetFilePointer(Handle, Size, NULL, FILE_CURRENT) == INVALID_SET_FILE_POINTER) throw bad_read();
+		if (SetFilePointer(Handle, Size, NULL, FILE_CURRENT) == INVALID_SET_FILE_POINTER) throw bad_read();
 	}
 	inline VOID Read(CONST LPVOID Dest, CONST DWORD Size) CONST {
 		DWORD Read;

@@ -53,7 +53,6 @@ namespace Proxy {
 		RemoteAddress.sin_family = AF_INET;
 		RemoteAddress.sin_addr.s_addr = Address;
 		RemoteAddress.sin_port = htons(Port);
-
 		connect(Soc, (sockaddr *) &RemoteAddress, sizeof(RemoteAddress));
 	}
 	DWORD ConnectionSocket::Connect(CONST LPCSTR Name, CONST WORD Port) CONST {
@@ -168,11 +167,11 @@ namespace Proxy {
 		if (Receive(Worldname, 41)) {
 			return FALSE;
 		}
-		if (LastRecv <= 0) {
+		if (LastRecv-- <= 0) {
 			return FALSE;
 		}
 		Received = 0;
-		return Worldname[LastRecv - 1] == '\n';
+		return Worldname[LastRecv] == '\n' && Parser->FindWorld(Worldname, LastRecv);
 	}
 	BOOL ConnectionSocket::SendWorldname() {
 		CHAR Worldname[41];
