@@ -43,6 +43,8 @@ protected:
 	BYTE Trading;
 	BYTE TradeBug;
 
+	DWORD Account;
+
 	static BOOL Avail() {
 		return Data < End;
 	}
@@ -150,8 +152,8 @@ public:
 	static BYTE Pending;
 	static DWORD PlayerID;
 
-	DWORD Account;
 	STRING Password;
+
 	Parser700() {
 		Pending = FALSE;
 	}
@@ -277,14 +279,11 @@ protected:
 
 	VOID Decrypt() CONST;
 	VOID Encrypt() CONST;
-
 protected:
 	BOOL ParsePacket() CONST;
 	PacketData* AllocPacket(CONST WORD Size) CONST;
 	VOID FinishPacket(PacketData* CONST Packet) CONST;
-
 public:
-
 	BOOL ParseOutgoingLogin();
 	VOID ForwardLogin() CONST;
 
@@ -305,16 +304,15 @@ class Parser830: public Parser820 {
 	static DWORD GetChecksum() {
 		return adler32(1, Data, End - Data);
 	}
-
 protected:
+	STRING Account;
+
 	BOOL ParsePacketBase() CONST;
 	PacketData* AllocPacketBase(CONST WORD Size) CONST;
 	VOID FinishPacketBase(PacketData* CONST Packet) CONST;
 
 	VOID FinishPacket(PacketData* CONST Packet) CONST;
-
 public:
-	STRING Account;
 	~Parser830() {
 		Account.Wipe();
 	}
@@ -430,10 +428,11 @@ public:
 };
 class Parser1074 : public Parser1072 {
 protected:
+	STRING SessionKey;
+
 	BOOL ParseSessionKey();
 	BOOL ParseGameData();
 public:
-	STRING SessionKey;
 	~Parser1074() {
 		SessionKey.Wipe();
 	}

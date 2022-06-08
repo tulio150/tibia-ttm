@@ -61,19 +61,12 @@ struct STRING {
 		return !Cmp.Compare(Data, Len);
 	}
 
-
 	inline VOID Wipe() {
 		SecureZeroMemory(Data, Len);
 		Len = 0;
 	}
 };
 
-struct WORLD {
-	BYTE ID;
-	PSTRING* Name;
-	PSTRING* Host;
-	WORD Port;
-};
 struct CHARACTER {
 	inline CHARACTER() {} //to call the string ctors
 
@@ -81,6 +74,12 @@ struct CHARACTER {
 	STRING WorldName;
 	STRING HostName;
 	DWORD Host;
+	WORD Port;
+};
+struct WORLD {
+	BYTE ID;
+	PSTRING* Name;
+	PSTRING* Host;
 	WORD Port;
 };
 
