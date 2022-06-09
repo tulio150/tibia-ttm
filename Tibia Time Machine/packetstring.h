@@ -22,18 +22,12 @@ struct PSTRING {
 		return Len == CmpLen && *this == Cmp;
 	}
 };
-struct RSTRING {
-	DWORD Len;
-	LPCWSTR Data;
-
-	inline RSTRING(CONST UINT ID): Len(LoadStringW(NULL, ID, LPWSTR(&Data), 0)) {}
-};
 struct TSTRING {
 	WORD Len;
 	LPSTR Data;
 
 	inline TSTRING(): Len(0), Data(NULL) {}
-	inline TSTRING(CONST WORD NewLen): Len(NewLen), Data(NewLen ? new(nothrow) CHAR[NewLen + 1] : NULL) {
+	inline TSTRING(CONST WORD NewLen): Len(NewLen), Data(new(nothrow) CHAR[NewLen + 1]) {
 		if (Data) {
 			Data[Len] = 0;
 		}
@@ -50,8 +44,7 @@ struct TSTRING {
 
 	inline TSTRING& operator =(CONST PSTRING& Src) {
 		this->~TSTRING();
-		new(this) TSTRING(Src);
-		return *this;
+		return *new(this) TSTRING(Src);
 	}
 
 	inline BOOL operator ==(CONST PSTRING& Cmp) {
@@ -65,6 +58,12 @@ struct TSTRING {
 		SecureZeroMemory(Data, Len);
 		Len = 0;
 	}
+};
+struct RSTRING {
+	DWORD Len;
+	LPCWSTR Data;
+
+	inline RSTRING(CONST UINT ID): Len(LoadStringW(NULL, ID, LPWSTR(&Data), 0)) {}
 };
 
 struct CHARACTER {
