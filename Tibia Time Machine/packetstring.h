@@ -28,12 +28,12 @@ struct RSTRING {
 
 	inline RSTRING(CONST UINT ID): Len(LoadStringW(NULL, ID, LPWSTR(&Data), 0)) {}
 };
-struct STRING {
+struct TSTRING {
 	WORD Len;
 	LPSTR Data;
 
-	inline STRING(): Len(0), Data(NULL) {}
-	inline STRING(CONST WORD NewLen): Len(NewLen), Data(new(nothrow) CHAR[Len + 1]) {
+	inline TSTRING(): Len(0), Data(NULL) {}
+	inline TSTRING(CONST WORD NewLen): Len(NewLen), Data(NewLen ? new(nothrow) CHAR[NewLen + 1] : NULL) {
 		if (Data) {
 			Data[Len] = 0;
 		}
@@ -41,16 +41,16 @@ struct STRING {
 			Len = 0;
 		}
 	}
-	inline STRING(CONST PSTRING &Src): STRING(Src.Len) {
+	inline TSTRING(CONST PSTRING &Src): TSTRING(Src.Len) {
 		CopyMemory(Data, Src.Data, Len);
 	}
-	inline ~STRING() {
+	inline ~TSTRING() {
 		delete [] Data;
 	}
 
-	inline STRING& operator =(CONST PSTRING& Src) {
-		this->~STRING();
-		new(this) STRING(Src);
+	inline TSTRING& operator =(CONST PSTRING& Src) {
+		this->~TSTRING();
+		new(this) TSTRING(Src);
 		return *this;
 	}
 
@@ -70,9 +70,9 @@ struct STRING {
 struct CHARACTER {
 	inline CHARACTER() {} //to call the string ctors
 
-	STRING Name;
-	STRING WorldName;
-	STRING HostName;
+	TSTRING Name;
+	TSTRING WorldName;
+	TSTRING HostName;
 	DWORD Host;
 	WORD Port;
 };

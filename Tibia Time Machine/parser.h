@@ -152,7 +152,7 @@ public:
 	static BYTE Pending;
 	static DWORD PlayerID;
 
-	STRING Password;
+	TSTRING Password;
 
 	Parser700() {
 		Pending = FALSE;
@@ -305,7 +305,7 @@ class Parser830: public Parser820 {
 		return adler32(1, Data, End - Data);
 	}
 protected:
-	STRING Account;
+	TSTRING Account;
 
 	BOOL ParsePacketBase() CONST;
 	PacketData* AllocPacketBase(CONST WORD Size) CONST;
@@ -428,7 +428,7 @@ public:
 };
 class Parser1074 : public Parser1072 {
 protected:
-	STRING SessionKey;
+	TSTRING SessionKey;
 
 	BOOL ParseSessionKey();
 	BOOL ParseGameData();
@@ -443,7 +443,7 @@ public:
 class Parser1080 : public Parser1074 {
 protected:
 	WORD CoinPack;
-	STRING Store;
+	TSTRING Store;
 
 	BOOL ParseCharacterList() CONST;
 
