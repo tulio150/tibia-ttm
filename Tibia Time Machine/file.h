@@ -114,31 +114,33 @@ public:
 	}
 };
 
-class MappedFile : private ReadingFile {
+class MappedFile {
 	LPVOID Ptr;
 
 protected:
 	LPCBYTE Data;
 	LPCBYTE End;
 
-	inline VOID Remap(CONST LPVOID Buf) {
+	inline static DWORD GetSize(CONST LPCTSTR FileName) {
+		WIN32_FILE_ATTRIBUTE_DATA Size;
+		return GetFileAttributesEx(FileName, GetFileExInfoStandard, &Size) ? Size.nFileSizeHigh ? INVALID_FILE_SIZE : Size.nFileSizeLow : 0;
+	}
+	inline VOID Remap(MappedFile &Buf) {
 		VirtualFree(Ptr, NULL, MEM_RELEASE);
-		Ptr = Buf;
+		Ptr = Buf.Ptr;
+		Data = Buf.Data;
+		End = Buf.End;
+		Buf.Ptr = NULL;
 	}
 
 public:
-	inline MappedFile(CONST LPCTSTR FileName) : ReadingFile(FileName) { // memory mapping causes SEH, emulate instead
-		if (CONST DWORD Size = GetSize()) {
-			if (Ptr = VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)) {
-				DWORD Read;
-				if (ReadFile(Handle, Ptr, Size, &Read, NULL) && Read == Size) {
-					End = (Data = LPCBYTE(Ptr)) + Size;
-					return;
-				}
-				VirtualFree(Ptr, NULL, MEM_RELEASE);
-			}
-		}
-		throw bad_alloc();
+	inline MappedFile(CONST DWORD Size) : Ptr(VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)) {
+		if (!Ptr) throw bad_alloc();
+		End = (Data = LPCBYTE(Ptr)) + Size;
+	}
+	inline MappedFile(CONST LPCTSTR FileName) : MappedFile(GetSize(FileName)) { // memory mapping causes SEH, emulate instead
+		ReadingFile File(FileName);
+		File.Read(Ptr, End - Data);
 	}
 	inline ~MappedFile() {
 		VirtualFree(Ptr, NULL, MEM_RELEASE);
@@ -228,19 +230,11 @@ public:
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size, Compressed;
 		if (!Read(Size) || Read<DWORD>() || !(Compressed = End - Data)) throw bad_read();
-		LPBYTE Buf = LPBYTE(VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
-		if (!Buf) throw bad_alloc();
-		if (LzmaUncompress(Buf, &Size, Data, &Compressed, Props, 5)) {
-			if (!Compressed) {
-				VirtualFree(Buf, NULL, MEM_RELEASE);
-				throw bad_alloc();
-			}
-			if (!Size || !AllowTruncated) {
-				VirtualFree(Buf, NULL, MEM_RELEASE);
-				throw bad_read();
-			}
+		MappedFile Buf(Size);
+		if (LzmaUncompress(LPBYTE(Buf.Skip(0)), &Size, Data, &Compressed, Props, 5)) {
+			if (!Compressed)  throw bad_alloc();
+			if (!Size || !AllowTruncated) throw bad_read();
 		}
-		End = (Data = Buf) + Size;
 		return Remap(Buf);
 	}
 };

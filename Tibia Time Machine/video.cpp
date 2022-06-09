@@ -680,10 +680,10 @@ namespace Video {
 		}
 	}
 	VOID OpenDrop(CONST HDROP Drop) {
-		BOOL Override = GetKeyState(VK_SHIFT) < 0;
+		CONST BOOL Override = GetKeyState(VK_SHIFT) < 0;
 		MainWnd::Wait();
 		MainWnd::Progress_Start();
-		INT SessionNumber = ListBox_GetCount(MainWnd::ListSessions);
+		CONST INT SessionNumber = ListBox_GetCount(MainWnd::ListSessions);
 		TCHAR FirstName[MAX_PATH];
 		CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 		TCHAR ErrorString[900];
