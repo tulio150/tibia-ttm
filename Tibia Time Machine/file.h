@@ -132,7 +132,7 @@ public:
 		if (DWORD Size = File.GetSize()) {
 			Realloc(Size);
 			try {
-				File.Read(Ptr, End - Data);
+				File.Read(Ptr, Size);
 				return;
 			}
 			catch (...) {
