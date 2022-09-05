@@ -96,6 +96,8 @@ LRESULT Loader::OnCreate(HWND Handle) {
 	LoadStringW(NULL, LABEL_GLOBAL, LPWSTR(LabelString), TLEN(25));
 	Edit_SetCueBannerTextFocused(EditHost, LabelString, TRUE);
 
+	INT Height = ComboBox_GetHeight(ComboHost);
+
 	LoadString(NULL, LABEL_PORT, LabelString, 50);
 	LabelPort = CreateWindowEx(WS_EX_NOPARENTNOTIFY, WC_STATIC, LabelString,
 			WS_VISIBLE | WS_CHILD | SS_LEFTNOWORDWRAP,
@@ -106,7 +108,7 @@ LRESULT Loader::OnCreate(HWND Handle) {
 
 	EditPort = CreateWindowEx(WS_EX_NOPARENTNOTIFY | WS_EX_CLIENTEDGE, WC_EDIT, NULL,
 			WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_CLIPCHILDREN | ES_AUTOHSCROLL | ES_NUMBER | ES_RIGHT,
-			Base.x * 20, Base.y * 3, Base.x * 7, ComboBox_GetHeight(ComboHost),
+			Base.x * 20, Base.y * 3, Base.x * 5, Height,
 			Handle, NULL, NULL, NULL);
 	if (!EditPort) return -1;
 	SetWindowFont(EditPort, Font, FALSE);
@@ -114,8 +116,8 @@ LRESULT Loader::OnCreate(HWND Handle) {
 	Edit_SetCueBannerTextFocused(EditPort, _W("0"), TRUE);
 
 	SpinPort = CreateWindowEx(WS_EX_NOPARENTNOTIFY, WC_UPDOWN, NULL,
-		WS_VISIBLE | WS_CHILD | UDS_ALIGNRIGHT | UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS | UDS_WRAP,
-		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+		WS_VISIBLE | WS_CHILD | UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS | UDS_WRAP,
+		Base.x * 25, Base.y * 3, Base.x * 2, Height,
 		Handle, HMENU(ID_PORT), NULL, NULL);
 	if (!SpinPort) return -1;
 	UpDown_SetBuddy(SpinPort, EditPort);
