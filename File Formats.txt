@@ -29,18 +29,16 @@ TibiCAM .rec: (https://github.com/gurka/OldSchoolTibia or https://github.com/Cja
 2: Encrypted (Tibia version < 830)
 	[4 bytes] Number of packets + 57
 	For:
-		[2 bytes] Encrypted data size (packet size + 2 + AES256 padding if version >= 5)
+		[2 bytes] Encrypted size (AES256 if version >= 5)
 		[4 bytes] Received time
-		[x bytes] Encrypted data:
-			[2 bytes] Packet size
-			[x bytes] Packet data
+		[x bytes] Encrypted data (packet stream inside)
 		[4 bytes] Checksum (Adler32 of encrypted data)
 End of recording
 
 ---------------------------------------------------------------------
 TibiaMovie .tmv: (http://tibiamovie.sourceforge.net/ or https://github.com/Google-Code-Fork/TibiaMovie)
 
-[r bytes] GZip compressed data: (optional)
+[x bytes] GZip compressed data:
 	[2 bytes] Format version (2 on 0.3.3)
 	[2 bytes] Tibia version (<= 760)
 	[4 bytes] Recording time
@@ -65,13 +63,11 @@ TibiaMovie2 .tmv: (https://github.com/opentibia/tibia-movie)
 [4 bytes] Number of packets
 [4 bytes] Last received time
 [4 bytes] Decompressed data size
-[r bytes] DEFLATE compressed data: (optional)
+[x bytes] DEFLATE compressed data: (optional)
 	For:
-		[2 bytes] Received size (packet size + 2)
+		[2 bytes] Received size
 		[4 bytes] Received time
-		[x bytes] Received data:
-			[2 bytes] Packet size
-			[x bytes] Packet data
+		[x bytes] Received data (single unencrypted packet)
 End of recording
 
 ---------------------------------------------------------------------
@@ -84,16 +80,14 @@ TibiaCam .cam: (https://github.com/exoticprgmr/bynacam)
 [4 bytes] Compressed data size (can include +13 bytes of the LZMA header)
 [5 bytes] Compression parameters
 [8 bytes] Decompressed data size
-[r bytes] LZMA Compressed data:
+[x bytes] LZMA Compressed data:
 	[1 bytes] Fake TibiCAM version (6)
 	[1 bytes] Fake TibiCAM format version (2)
 	[4 bytes] Number of packets + 57
 	For:
-		[2 bytes] Received size (packet size + 2)
+		[2 bytes] Received size
 		[4 bytes] Received time
-		[x bytes] Received data:
-			[2 bytes] Packet size
-			[x bytes] Packet data
+		[x bytes] Received data (single unencrypted packet)
 		[4 bytes] Undefined (Size again, CRC32 of packet data or random trash)
 End of recording
 
@@ -112,7 +106,7 @@ For:
 ---------------------------------------------------------------------
 TCam .tcam: (https://github.com/Google-Code-Fork/tcam or https://code.google.com/archive/p/tcam/)
 
-[r bytes] GZip compressed data:
+[x bytes] GZip compressed data:
 	Loop:
 		[1 bytes] Data type
 		48: XTEA Key
@@ -185,7 +179,7 @@ TCam .tcam: (https://github.com/Google-Code-Fork/tcam or https://code.google.com
 ---------------------------------------------------------------------
 BynaCam .byn: (https://github.com/EnzzoCaaue/bynacam or https://code.google.com/archive/p/bynacam/)
 
-[r bytes] GZip compressed data:
+[x bytes] GZip compressed data:
 	Loop:
 		[1 bytes] Data type
 		99: Video footer
@@ -203,7 +197,7 @@ BynaCam .byn: (https://github.com/EnzzoCaaue/bynacam or https://code.google.com/
 TibiaCast .recording: (https://github.com/jo3bingham/sharpmaptracker/ or https://code.google.com/archive/p/sharpmaptracker/)
 
 [2 bytes] TibiaCast version (4 21: 10.36, 4 22: 10.38, 4 23: 10.41, 4 30: 10.79)
-[r bytes] DEFLATE compressed data:
+[x bytes] DEFLATE compressed data:
 	Version > 4 04:
 		[4 bytes] Unknown
 	Version > 4 08:

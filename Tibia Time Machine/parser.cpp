@@ -2158,20 +2158,20 @@ VOID Parser761::StartRSA() {
 }
 VOID Parser761::ParseRSA() {
 	StartRSA();
-	BIGWORD Msg(RSA_Data, 32);
-	Msg.PowMod(Tibia::RSA::Private, 32, Tibia::RSA::Modulus, 32);
-	Msg.Export(RSA_Data, 32);
+	BIGWORD Msg(RSA_Data);
+	Msg.PowMod(Tibia::RSA::Private, Tibia::RSA::Modulus);
+	Msg.Export(RSA_Data);
 }
 VOID Parser761::FinishRSA() {
-	BIGWORD Msg(RSA_Data, 32);
-	Msg.PowMod(Tibia::RSA::Public, Tibia::RSA::Modulus, 32); //global?
-	Msg.Export(RSA_Data, 32);
+	BIGWORD Msg(RSA_Data);
+	Msg.PowMod(Tibia::RSA::Public, Tibia::RSA::Modulus); //global?
+	Msg.Export(RSA_Data);
 }
 VOID Parser761::ProxyRSA() {
-	BIGWORD Msg(Data, 32);
-	Msg.PowMod(Tibia::RSA::Private, 32, Tibia::RSA::Modulus, 32);
-	Msg.PowMod(Tibia::RSA::Public, Tibia::RSA::Modulus, 32); //global?
-	Msg.Export(Data, 32);
+	BIGWORD Msg(Data);
+	Msg.PowMod(Tibia::RSA::Private, Tibia::RSA::Modulus);
+	Msg.PowMod(Tibia::RSA::Public, Tibia::RSA::Modulus); //global?
+	Msg.Export(Data);
 }
 
 VOID Parser761::Decrypt() CONST {
