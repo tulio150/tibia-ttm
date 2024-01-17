@@ -337,7 +337,6 @@ namespace MainWnd {
 						}
 					}
 				}
-				LoadString(NULL, MENU_DELETE_ALL, MenuString, 40);
 				CopyMemory(MenuString + LoadString(NULL, MENU_DELETE_ALL, MenuString, 26), _T("\tShift+Delete"), TLEN(14));
 				AppendMenu(DeleteMenu, MF_STRING, 2, MenuString);
 				ClientToScreen(ListSessions, &MenuPos);
