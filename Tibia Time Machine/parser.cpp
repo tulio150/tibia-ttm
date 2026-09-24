@@ -384,7 +384,7 @@ VOID Parser971::ConstructVideoLogin() {
 	RSTRING Str(PLAY_VIDEO);
 	if (Str.Len > 40) throw bad_alloc();
 	Proxy::Extra.Construct(AllocPacket(27 + Str.Len));
-	ConstructVideoLoginBase(PLAY_VIDEO);
+	ConstructVideoLoginBase(Str);
 	GetByte() = FALSE;
 	GetWord() = 0; // Premium days
 	FinishPacket(&Proxy::Extra);

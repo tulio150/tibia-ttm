@@ -1,7 +1,7 @@
 Tibia Time Machine .ttm: (https://github.com/tulio150/tibia-ttm)
 
 [2 bytes] Tibia version (>= 700)
-[1 bytes] Server name lenght (< 128)
+[1 bytes] Server name length (< 128)
 > 0: OpenTibia server
 	[x bytes] Server name (a-z, 0-9, [.-_])
 	[2 bytes] Port (> 0)
@@ -281,8 +281,8 @@ Loop:
 		[4 bytes] IP address (Little endian)
 	17: Tibia version
 		[2 bytes] Tibia version (Little endian)
-	18: Plataform
-		[1 bytes] Plataform (1: Windows, 2: X11, 3: Mac, 4: QWS, 255: Unknown)
+	18: Platform
+		[1 bytes] Platform (1: Windows, 2: X11, 3: Mac, 4: QWS, 255: Unknown)
 	19: Windows version
 		[2 bytes] Windows version (Little endian)
 	20: Header checksum

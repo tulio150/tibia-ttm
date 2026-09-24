@@ -93,7 +93,6 @@ namespace Video {
 	}
 
 	VOID SaveTTM() {
-		NeedParser ToSave;
 		BufferedFile File(FileName);
 		File.Write(Tibia::Version);
 		File.Write(Tibia::HostLen);
@@ -292,7 +291,6 @@ namespace Video {
 		return 0;
 	}
 	VOID SaveCAM() {
-		NeedParser ToSave;
 		DWORD Size = (*First)->RawSize() + 16, Packets = 58;
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) throw bad_alloc();
@@ -362,7 +360,6 @@ namespace Video {
 	}
 
 	VOID SaveTMV() {
-		NeedParser ToSave;
 		GzipBufferedFile File(FileName);
 		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
 		File.Write(Tibia::Version);
@@ -370,15 +367,13 @@ namespace Video {
 		File.Write(BYTE(FALSE));
 		File.Write(DWORD(0));
 		WORD Size = (*(Current = First))->RawSize();
-		if (Size < 2) Size = 0;
 		File.Write(Size);
 		File.Write(&(*Current), Size);
 		while (Current->Next) {
 			if (Current->IsLast()) File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
 			File.Write(BYTE(FALSE));
 			File.Write(Current->Next->Time - Current->Time);
-			if ((Size = (*(Current = Current->Next))->RawSize()) < 2) Size = 0;
-			File.Write(Size);
+			File.Write(Size = (*(Current = Current->Next))->RawSize());
 			File.Write(&(*Current), Size);
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		}
@@ -414,7 +409,6 @@ namespace Video {
 		for (Current = First; Current = Current->Next; Packets++) {
 			if (Packets == INFINITE) throw bad_alloc();
 		}
-		NeedParser ToSave;
 		BufferedFile File(FileName);
 		File.Write(RECVersion()); // this version control is what made me create ttm
 		File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
