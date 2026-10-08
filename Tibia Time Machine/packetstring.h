@@ -76,7 +76,6 @@ struct CHARACTER {
 	WORD Port;
 };
 struct WORLD {
-	BYTE ID;
 	PSTRING* Name;
 	PSTRING* Host;
 	WORD Port;

@@ -694,17 +694,18 @@ BOOL Parser1012::ParseCharacterListBase(CONST WORD PremDays) CONST {
 	if (!Worlds || Overflow(Worlds * 17 + PremDays + 1)) {
 		return FALSE;
 	}
-	WORLD* Worldlist = new WORLD[Worlds];
-	for (BYTE World = 0; World < Worlds; World++) {
-		Worldlist[World].ID = GetByte();
+	WORLD Worldlist[0x100] = { };
+	while (Worlds--) {
+		BYTE World = GetByte();
+		if (Worldlist[World].Name) {
+			return FALSE;
+		}
 		Worldlist[World].Name = &GetString();
-		if (Worldlist[World].Name->Len > 40 || Overflow(17 + (Worlds - World - 1) * 17)) {
-			delete[] Worldlist;
+		if (Worldlist[World].Name->Len > 40 || Overflow(Worlds * 17 + PremDays + 15)) {
 			return FALSE;
 		}
 		Worldlist[World].Host = &GetString();
-		if (Worldlist[World].Host->Len < 9 || Worldlist[World].Host->Len > 127 || Overflow(4 + PremDays + (Worlds - World - 1) * 17)) {
-			delete[] Worldlist;
+		if (Worldlist[World].Host->Len < 9 || Worldlist[World].Host->Len > 127 || Overflow(Worlds * 17 + PremDays + 4)) {
 			return FALSE;
 		}
 		WORD& Port = GetWord();
@@ -715,33 +716,30 @@ BOOL Parser1012::ParseCharacterListBase(CONST WORD PremDays) CONST {
 	Chars = GetByte();
 	if (Overflow(Chars * 3 + PremDays)) {
 		Chars = 0;
-		delete[] Worldlist;
 		return FALSE;
 	}
 	Charlist = new CHARACTER[Chars];
 	for (BYTE Char = 0; Char < Chars; Char++) {
-		BYTE WorldID = GetByte();
-		PSTRING &Name = GetString();
-		if (Name.Len > 40 || Overflow(PremDays + (Chars - Char - 1) * 3)) {
+		BYTE World = GetByte();
+		if (!Worldlist[World].Name) {
 			Chars = 0;
 			delete[] Charlist;
-			delete[] Worldlist;
+			return FALSE;
+		}
+		PSTRING &Name = GetString();
+		if (Name.Len > 40 || Overflow((Chars - Char - 1) * 3 + PremDays)) {
+			Chars = 0;
+			delete[] Charlist;
 			return FALSE;
 		}
 		Charlist[Char].Name = Name;
 		Charlist[Char].Host = INADDR_ANY;
-		for (BYTE World = 0; World < Worlds; World++) {
-			if (Worldlist[World].ID == WorldID) {
-				Charlist[Char].WorldName = *Worldlist[World].Name;
-				Charlist[Char].HostName = *Worldlist[World].Host;
-				Charlist[Char].Port = Worldlist[World].Port;
-				break;
-			}
-		}
+		Charlist[Char].WorldName = *Worldlist[World].Name;
+		Charlist[Char].HostName = *Worldlist[World].Host;
+		Charlist[Char].Port = Worldlist[World].Port;
 		if (!Charlist[Char].HostName.Data) {
 			Chars = 0;
 			delete[] Charlist;
-			delete[] Worldlist;
 			return FALSE;
 		}
 		if (!Char) {
@@ -755,9 +753,10 @@ BOOL Parser1012::ParseCharacterListBase(CONST WORD PremDays) CONST {
 		}
 	}
 	while (Worlds--) {
-		Worldlist[Worlds].Host->Replace("127.0.0.1", 10);
+		if (Worldlist[Worlds].Host) {
+			Worldlist[Worlds].Host->Replace("127.0.0.1", 10);
+		}
 	}
-	delete[] Worldlist;
 	GetData(PremDays);
 	return TRUE;
 }
