@@ -326,9 +326,8 @@ namespace Video {
 	VOID OpenCAM(BOOL Override, CONST HWND Parent) {
 		LzmaMappedFile File(FileName);
 		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
-		CONST LPCBYTE VersionPart = File.Skip(4);
-		if (VersionPart[0] > 99 || VersionPart[1] > 9 || VersionPart[2] > 9 || VersionPart[3]) throw ERROR_CORRUPT_VIDEO;
-		CONST WORD Version = VersionPart[0] * 100 + VersionPart[1] * 10 + VersionPart[2];
+		CONST LPCBYTE Version = File.Skip(4);
+		if (Version[0] > 99 || Version[1] > 9 || Version[2] > 9 || Version[3]) throw ERROR_CORRUPT_VIDEO;
 		BYTE HostLen = NULL;
 		LPCSTR Host = NULL;
 		WORD Port = PORT;
@@ -342,7 +341,7 @@ namespace Video {
 				File.Read(Port);
 			}
 		}
-		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
+		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
 		File.Uncompress(Override);
 		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
