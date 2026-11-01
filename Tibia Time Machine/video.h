@@ -18,7 +18,7 @@ namespace Video {
 		static HANDLE NewHeap;
 		DWORD Time;
 		Packet *Next;
-		Session *Login;
+		Session *CONST Login;
 
 		LPVOID operator new(size_t Size, CONST PacketData* CONST Src) {
 			return Parser->RecordPacket(Src);

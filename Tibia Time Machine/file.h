@@ -117,13 +117,13 @@ class MappedFile {
 	LPVOID Ptr;
 
 protected:
-	LPCBYTE Data;
+	LPBYTE Data;
 	LPCBYTE End;
 
 	inline VOID Realloc(CONST DWORD Size) {
 		Ptr = VirtualAlloc(NULL, Size, MEM_TOP_DOWN | MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 		if (!Ptr) throw bad_alloc();
-		End = (Data = LPCBYTE(Ptr)) + Size;
+		End = (Data = LPBYTE(Ptr)) + Size;
 	}
 
 public:
@@ -148,17 +148,16 @@ public:
 	inline BOOL Peek() CONST {
 		return Data < End;
 	}
-	inline LPCBYTE Skip(CONST DWORD Size) {
-		LPCBYTE Src = Data;
+	inline LPBYTE Skip(CONST DWORD Size) {
+		LPBYTE Src = Data;
 		if ((Data += Size) > End) throw bad_read();
 		return Src;
 	}
 	inline VOID Read(CONST LPVOID Dest, CONST DWORD Size) {
 		CopyMemory(Dest, Skip(Size), Size);
 	}
-	template <typename TYPE> inline CONST TYPE& Read() {
-		if ((Data + sizeof(TYPE)) > End) throw bad_read();
-		return *(*(CONST TYPE**)&Data)++;
+	template <typename TYPE> inline TYPE& Read() {
+		return *(TYPE*) Skip(sizeof(TYPE));
 	}
 	template <typename TYPE> inline TYPE& Read(TYPE& Dest) {
 		return Dest = Read<TYPE>();
