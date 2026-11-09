@@ -374,6 +374,7 @@ namespace Video {
 				File.Write((*Current)->Size);
 				File.Write(BYTE(FALSE));
 				File.Write(DWORD(0));
+				File.Write((*Current)->Size);
 				File.Write((*Current)->Data, (*Current)->Size);
 			}
 			else {
