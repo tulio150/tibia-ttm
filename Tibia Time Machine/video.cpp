@@ -363,19 +363,27 @@ namespace Video {
 		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
 		File.Write(Tibia::Version);
 		File.Write(Last->Time);
-		File.Write(BYTE(FALSE));
-		File.Write(DWORD(0));
-		WORD Size = (*(Current = First))->RawSize();
-		File.Write(Size);
-		File.Write(&(*Current), Size);
-		while (Current->Next) {
-			if (Current->IsLast()) File.Write(BYTE(TRUE)); // I'm adding markers to the ends of the sessions
+		Current = First;
+		DWORD LastTime = 0;
+		do {
+			if (Current == Current->Login) File.Write(BYTE(TRUE)); // I'm adding markers to the starts of the sessions
 			File.Write(BYTE(FALSE));
-			File.Write(Current->Next->Time - Current->Time);
-			File.Write(Size = (*(Current = Current->Next))->RawSize());
-			File.Write(&(*Current), Size);
+			File.Write(Current->Time - LastTime);
+			if ((*Current)->Size > 65533) {
+				File.Write(WORD(2));
+				File.Write((*Current)->Size);
+				File.Write(BYTE(FALSE));
+				File.Write(DWORD(0));
+				File.Write((*Current)->Data, (*Current)->Size);
+			}
+			else {
+				WORD Size = (*Current)->RawSize();
+				File.Write(Size);
+				File.Write(&(*Current), Size);
+			}
+			LastTime = Current->Time;
 			MainWnd::Progress_Set(Current->Time, Last->Time);
-		}
+		} while (Current = Current->Next);
 		File.Save();
 	}
 	VOID OpenTMV(BOOL Override, CONST HWND Parent) {
