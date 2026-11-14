@@ -231,8 +231,7 @@ public:
 		MappedFile Temp(*this);
 		Realloc(Size);
 		if (LzmaUncompress(LPBYTE(Data), &Size, Temp.Skip(0), &Compressed, Props, 5)) {
-			if (!Compressed)  throw bad_alloc();
-			if (!Size || !AllowTruncated) throw bad_read();
+			if (!Compressed) throw bad_alloc();
 		}
 		End = Data + Size;
 	}

@@ -165,7 +165,7 @@ namespace Video {
 		}
 	};
 
-	VOID OpenTTM(BOOL Override, CONST HWND Parent) {
+	VOID OpenTTM(BOOL &Override, CONST HWND Parent) {
 		MappedFile File(FileName);
 		CONST WORD Version = File.Read<WORD>();
 		BYTE HostLen;
@@ -175,8 +175,8 @@ namespace Video {
 			Host = LPCSTR(File.Skip(HostLen));
 			File.Read(Port);
 		}
-		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
 		DWORD TotalTime = File.Read<DWORD>();
+		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
 		FilePacket Src;
 		if (!Src.Read(File) || !Parser->PlayerData) throw ERROR_CORRUPT_VIDEO;
 		if (!Parser->EnterGame) { // videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
@@ -211,8 +211,134 @@ namespace Video {
 		if (Current->Time != TotalTime && !Override) throw bad_read();
 	}
 
+	BYTE RECVersion() {
+		return Tibia::Version >= 1080 ? 11 : Tibia::Version >= 1058 ? 10 : Tibia::Version >= 1054 ? 9 : Tibia::Version >= 980 ? 8 : Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
+	}
+	INT CAMProgressCallback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
+		MainWnd::Progress_Set(DecSize, TotalSize);
+		return 0;
+	}
+	VOID SaveCAM() {
+		DWORD Size = (*(Current = First))->RawSize() + 16, Packets = 58;
+		while (Current = Current->Next) if (!++Packets || (Size += (*Current)->RawSize() + 10) > 0x7FFEFF96) throw bad_alloc();
+		LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
+		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
+		File.Write(Tibia::Version / 100 % 100 | Tibia::Version / 10 % 10 << 8 | DWORD(Tibia::Version) % 10 << 16);
+		if (Tibia::HostLen) {
+			File.Write(DWORD(Tibia::HostLen) + 3);
+			File.Write(Tibia::HostLen);
+			File.Write(Tibia::Host, Tibia::HostLen);
+			File.Write(Tibia::Port);
+		}
+		else {
+			File.Write(DWORD(0));
+		}
+		File.Compress();
+		File.Write(RECVersion()); // Ignored by all players
+		File.Write(BYTE(2)); // It mimics an encrypted REC file, but without encryption
+		File.Write(Packets);
+		Current = First;
+		do {
+			File.Write(WORD(Size = (*Current)->RawSize()));
+			File.Write(Current->Time);
+			File.Write(&(*Current), Size);
+			File.Write(crc32(0, (*Current)->Data, (*Current)->Size));
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		} while (Current = Current->Next);
+		File.Save(CAMProgressCallback);
+	}
+
 	Packet*& Started() {
 		return Last ? Last->Next : First;
+	}
+	VOID OpenCAM(BOOL& Override, CONST HWND Parent) {
+		LzmaMappedFile File(FileName);
+		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
+		CONST LPCBYTE Version = File.Skip(4);
+		if (Version[0] > 99 || Version[1] > 9 || Version[2] > 9 || Version[3]) throw ERROR_CORRUPT_VIDEO;
+		BYTE HostLen = NULL;
+		LPCSTR Host = NULL;
+		WORD Port = PORT;
+		if (DWORD Metadata = File.Read<DWORD>()) {
+			if (DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
+				File.Skip(Metadata);
+			}
+			else {
+				if (Metadata < 4 || Metadata > 130 || File.Read(HostLen) != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
+				Host = LPCSTR(File.Skip(HostLen));
+				File.Read(Port);
+			}
+		}
+		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
+		File.Uncompress(Override);
+		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
+		DWORD Packets;
+		if (File.Read(Packets) < 58) throw ERROR_CORRUPT_VIDEO;
+		Packets -= 57;
+		FilePacket Src; // Shortcut to read all kinds of videos, could use FilePacket
+		DWORD LastTime = 0;
+		Current = Last;
+		for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
+			File.Read<WORD>(); // Ignore this size, it can overflow
+			DWORD Time = File.Read<DWORD>();
+			if (!Src.Read(File)) throw bad_read();
+			if (Parser->EnterGame) {
+				if (Current) {
+					if (1000 > INFINITE - Current->Time) throw bad_alloc();
+					Current->EndSession();
+					Current = Current->Next = new(&Src) Session(Current);
+				}
+				else {
+					Current = First = new(&Src) Session();
+				}
+			}
+			else if (!Parser->Pending && !Parser->PlayerData) {
+				if (!Started()) throw ERROR_CORRUPT_VIDEO;
+				DWORD Delay = Time - LastTime;
+				if (Delay > BIGDELAY) {
+					Delay = BIGDELAY;
+				}
+				if (Delay > INFINITE - Current->Time) {
+					Delay = INFINITE - Current->Time;
+				}
+				Current = Current->Next = new(&Src) Packet(Current, WORD(Delay));
+			}
+			File.Read<DWORD>(); // Ignore checksum, some recorders misuse it (LZMA already checksums)
+			LastTime = Time;
+		}
+		if (!Started()) throw ERROR_CORRUPT_VIDEO;
+		if (File.Peek() && !Override) throw bad_read();
+	}
+
+	VOID SaveTMV() {
+		GzipBufferedFile File(FileName);
+		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
+		File.Write(Tibia::Version);
+		File.Write(Last->Time);
+		Current = First;
+		DWORD LastTime = 0;
+		do {
+			if (Current == Current->Login) File.Write(BYTE(TRUE)); // I'm adding markers to the starts of the sessions
+			File.Write(BYTE(FALSE));
+			File.Write(Current->Time - LastTime);
+			if ((*Current)->Size > 65533) {
+				File.Write(WORD(2));
+				File.Write((*Current)->Size);
+				File.Write(BYTE(FALSE));
+				File.Write(DWORD(0));
+				File.Write((*Current)->Size);
+				File.Write((*Current)->Data, (*Current)->Size);
+			}
+			else {
+				WORD Size = (*Current)->RawSize();
+				File.Write(Size);
+				File.Write(&(*Current), Size);
+			}
+			LastTime = Current->Time;
+			MainWnd::Progress_Set(Current->Time, Last->Time);
+		} while (Current = Current->Next);
+		File.Save();
 	}
 
 	class Converter : private FilePacket {
@@ -223,7 +349,7 @@ namespace Video {
 	public:
 		DWORD Time;
 
-		Converter(): Store(LPBYTE(&PacketSize)), Want(2) {
+		Converter() : Store(LPBYTE(&PacketSize)), Want(2) {
 			Current = Last;
 		}
 		~Converter() {
@@ -282,112 +408,7 @@ namespace Video {
 			}
 		}
 	};
-
-	BYTE RECVersion() {
-		return Tibia::Version >= 1080 ? 11 : Tibia::Version >= 1058 ? 10 : Tibia::Version >= 1054 ? 9 : Tibia::Version >= 980 ? 8 : Tibia::Version >= 830 ? 7 : Tibia::Version >= 800 ? 6 : Tibia::Version >= 772 ? 5 : Tibia::Version >= 770 ? 4 : Tibia::Version >= 710 ? 3 : 2;
-	}
-	INT CAMProgressCallback(LPVOID This, QWORD DecSize, QWORD EncSize, QWORD TotalSize) { //Provided by my custom LzmaLib
-		MainWnd::Progress_Set(DecSize, TotalSize);
-		return 0;
-	}
-	VOID SaveCAM() {
-		DWORD Size = (*First)->RawSize() + 16, Packets = 58;
-		for (Current = First; Current = Current->Next; Packets++) {
-			if (Packets == INFINITE) throw bad_alloc();
-			CONST DWORD PacketSize = (*Current)->RawSize();
-			if (PacketSize > 0xFFFF || (Size += PacketSize + 10) > 0x7FFEFF96) throw bad_alloc();
-		}
-		LzmaBufferedFile File(FileName, Size, Tibia::HostLen ? Tibia::HostLen + 43 : 40);
-		File.Write(CAM_HASH, 32); // Our little mod to allow otserver info, no other player checks the hash
-		File.Write(Tibia::Version / 100 % 100 | Tibia::Version / 10 % 10 << 8 | DWORD(Tibia::Version) % 10 << 16);
-		if (Tibia::HostLen) {
-			File.Write(DWORD(Tibia::HostLen) + 3);
-			File.Write(Tibia::HostLen);
-			File.Write(Tibia::Host, Tibia::HostLen);
-			File.Write(Tibia::Port);
-		}
-		else {
-			File.Write(DWORD(0));
-		}
-		File.Compress();
-		File.Write(RECVersion()); // Ignored by all players
-		File.Write(BYTE(2)); // It mimics an encrypted REC file, but without encryption
-		File.Write(Packets);
-		Current = First;
-		do {
-			File.Write(WORD(Size = (*Current)->RawSize()));
-			File.Write(Current->Time);
-			File.Write(&(*Current), Size);
-			File.Write(crc32(0, (*Current)->Data, (*Current)->Size));
-			MainWnd::Progress_Set(Current->Time, Last->Time);
-		} while (Current = Current->Next);
-		File.Save(CAMProgressCallback);
-	}
-	VOID OpenCAM(BOOL Override, CONST HWND Parent) {
-		LzmaMappedFile File(FileName);
-		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
-		CONST LPCBYTE Version = File.Skip(4);
-		if (Version[0] > 99 || Version[1] > 9 || Version[2] > 9 || Version[3]) throw ERROR_CORRUPT_VIDEO;
-		BYTE HostLen = NULL;
-		LPCSTR Host = NULL;
-		WORD Port = PORT;
-		if (DWORD Metadata = File.Read<DWORD>()) {
-			if (DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
-				File.Skip(Metadata);
-			}
-			else {
-				if (Metadata < 4 || Metadata > 130 || File.Read(HostLen) != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
-				Host = LPCSTR(File.Skip(HostLen));
-				File.Read(Port);
-			}
-		}
-		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
-		File.Uncompress(Override);
-		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
-		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
-		DWORD Packets;
-		if (File.Read(Packets) < 58) throw ERROR_CORRUPT_VIDEO;
-		Packets -= 57;
-		Converter Src; // Shortcut to read all kinds of videos, could use FilePacket
-		for (DWORD i = 0; i < Packets; i++) {
-			CONST WORD Size = File.Read<WORD>();
-			File.Read(Src.Time);
-			Src.Read(File.Skip(DWORD(Size) + 4), Size); // Ignore checksum, some recorders misuse it (LZMA already checksums)
-			MainWnd::Progress_Set(i, Packets);
-		}
-		if (!Started()) throw ERROR_CORRUPT_VIDEO;
-	}
-
-	VOID SaveTMV() {
-		GzipBufferedFile File(FileName);
-		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
-		File.Write(Tibia::Version);
-		File.Write(Last->Time);
-		Current = First;
-		DWORD LastTime = 0;
-		do {
-			if (Current == Current->Login) File.Write(BYTE(TRUE)); // I'm adding markers to the starts of the sessions
-			File.Write(BYTE(FALSE));
-			File.Write(Current->Time - LastTime);
-			if ((*Current)->Size > 65533) {
-				File.Write(WORD(2));
-				File.Write((*Current)->Size);
-				File.Write(BYTE(FALSE));
-				File.Write(DWORD(0));
-				File.Write((*Current)->Size);
-				File.Write((*Current)->Data, (*Current)->Size);
-			}
-			else {
-				WORD Size = (*Current)->RawSize();
-				File.Write(Size);
-				File.Write(&(*Current), Size);
-			}
-			LastTime = Current->Time;
-			MainWnd::Progress_Set(Current->Time, Last->Time);
-		} while (Current = Current->Next);
-		File.Save();
-	}
-	VOID OpenTMV(BOOL Override, CONST HWND Parent) {
+	VOID OpenTMV(BOOL &Override, CONST HWND Parent) {
 		GzipMappedFile File(FileName);
 		if (File.Read<WORD>() != 2) throw ERROR_CORRUPT_VIDEO;
 		BeforeOpen(Override, Parent, File.Read<WORD>(), NULL, NULL, PORT);
@@ -413,10 +434,9 @@ namespace Video {
 	}
 
 	VOID SaveREC() {
+		Current = First;
 		DWORD Packets = 1;
-		for (Current = First; Current = Current->Next; Packets++) {
-			if (Packets == INFINITE) throw bad_alloc();
-		}
+		while (Current = Current->Next) if (!++Packets) throw bad_alloc();
 		BufferedFile File(FileName);
 		File.Write(RECVersion()); // this version control is what made me create ttm
 		File.Write(BYTE(1)); // there is no point in saving encrypted rec files anymore, and they are slower
@@ -431,6 +451,7 @@ namespace Video {
 		} while (Current = Current->Next);
 		File.Save();
 	}
+
 	WORD GuessVersion(CONST PacketData& Src) { // Timestamps from TibiaRC - need checking
 		if (Src.Size > 50) for (WORD i = Src.Size - 50; i--;) {
 			if (Src.Data[i] == 0xB4 && !DiffMemory(Src.Data + i + 4, "Your last visit in Tibia: ", 26)) {
@@ -510,7 +531,7 @@ namespace Video {
 		}
 		return 0;
 	}
-	VOID OpenREC(BOOL Override, CONST HWND Parent) {
+	VOID OpenREC(BOOL &Override, CONST HWND Parent) {
 		MappedFile File(FileName);
 		BYTE RecVersion;
 		if (File.Read(RecVersion) < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
@@ -522,11 +543,10 @@ namespace Video {
 		}
 		DWORD Packets = File.Read<DWORD>();
 		Converter Src;
-		if (Encryption < 2) for (DWORD i = 0; i < Packets; i++) {
+		if (Encryption < 2) for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
 			CONST DWORD Size = File.Read<DWORD>();
 			File.Read(Src.Time);
 			Src.Read(File.Skip(Size), Size);
-			MainWnd::Progress_Set(i, Packets);
 		}
 		else {
 			if (Packets < 58) throw ERROR_CORRUPT_VIDEO;
@@ -541,7 +561,7 @@ namespace Video {
 					throw ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 			}
-			for (DWORD i = 0; i < Packets; i++) {
+			for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
 				DWORD Size = File.Read<WORD>();
 				File.Read(Src.Time);
 				CONST LPBYTE Data = File.Skip(Size);
@@ -550,7 +570,6 @@ namespace Video {
 				for (DWORD i = 0; i < Size; i++) Data[i] += ((Rem = (Key += 33) % Mod) > 0 ? Rem - Mod : Rem) - Key;
 				if (RecVersion > 4 && !CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Size)) throw bad_read();
 				Src.Read(Data, Size);
-				MainWnd::Progress_Set(i, Packets);
 			}
 		}
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
@@ -669,7 +688,7 @@ namespace Video {
 		Changed = FALSE;
 		return NULL;
 	}
-	UINT Open(DWORD Format, CONST BOOL Override, CONST HWND Parent) {
+	UINT Open(DWORD Format, BOOL Override, CONST HWND Parent) {
 		try {
 			switch (Format) {
 			case NULL: return ERROR_VIDEO_FORMAT_NOT_SUPPORTED;
@@ -750,50 +769,43 @@ namespace Video {
 		MainWnd::Wait();
 		MainWnd::Progress_Start();
 		CONST INT SessionNumber = ListBox_GetCount(MainWnd::ListSessions);
-		TCHAR FirstName[MAX_PATH];
-		CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
 		TCHAR ErrorString[900];
 		SIZE_T Pos = 0;
-		MainWnd::Progress_Segments = DragQueryFile(Drop, INFINITE, NULL, NULL);
-		for (UINT i = 0; DragQueryFile(Drop, i, FileName, MAX_PATH); i++) {
-			if (!Last) {
-				CopyMemory(FirstName, FileName, TLEN(MAX_PATH));
-			}
-			MainWnd::Progress_Segment = i;
-			if (CONST UINT Error = Open(DetectFormat(), Override, MainWnd::Handle)) {
-				LPCTSTR ErrorFile = PathFindFileName(FileName);
-				SIZE_T FileSize = _tcslen(ErrorFile);
-				if (Pos) {
-					if (Pos + FileSize + 4 + RSTRING(Error).Len > 900) {
-						continue;
+		for (UINT i = MainWnd::Progress_Segments = DragQueryFile(Drop, INFINITE, NULL, NULL); i--;) {
+			if (DragQueryFile(Drop, i, FileName, MAX_PATH)) {
+				MainWnd::Progress_Segment = MainWnd::Progress_Segments - i;
+				if (CONST UINT Error = Open(DetectFormat(), Override, MainWnd::Handle)) {
+					LPCTSTR ErrorFile = PathFindFileName(FileName);
+					SIZE_T FileSize = _tcslen(ErrorFile);
+					if (Pos) {
+						if (Pos + FileSize + 4 + RSTRING(Error).Len > 900) {
+							continue;
+						}
+						ErrorString[Pos++] = '\n';
+						ErrorString[Pos++] = '\n';
 					}
-					ErrorString[Pos++] = '\n';
-					ErrorString[Pos++] = '\n';
+					CopyMemory(ErrorString + Pos, ErrorFile, TLEN(FileSize));
+					ErrorString[(Pos += FileSize)++] = '\n';
+					Pos += LoadString(NULL, Error, ErrorString + Pos, 900 - Pos);
 				}
-				CopyMemory(ErrorString + Pos, ErrorFile, TLEN(FileSize));
-				ErrorString[(Pos += FileSize)++] = '\n';
-				Pos += LoadString(NULL, Error, ErrorString + Pos, 900 - Pos);
-			}
-			else {
-				SHAddToRecentDocs(SHARD_PATH, FileName);
+				else {
+					SHAddToRecentDocs(SHARD_PATH, FileName);
+				}
 			}
 		}
 		MainWnd::Progress_Segment = 0;
 		MainWnd::Progress_Segments = 1;
 		MainWnd::Done();
-		CopyMemory(FileName, FirstName, TLEN(MAX_PATH));
 		if (Pos) {
 			MainWnd::Progress_Error();
 			TCHAR TitleString[50];
 			LoadString(NULL, TITLE_OPEN_VIDEO, TitleString, 50);
 			MessageBox(MainWnd::Handle, ErrorString, TitleString, MB_ICONSTOP);
 		}
-		if (Last) {
-			if (ListBox_GetCount(MainWnd::ListSessions) > SessionNumber) {
-				SetFileTitle();
-				ListBox_SetCurSel(MainWnd::ListSessions, SessionNumber);
-				Tibia::AutoPlay();
-			}
+		if (Last && ListBox_GetCount(MainWnd::ListSessions) > SessionNumber) {
+			ListBox_SetCurSel(MainWnd::ListSessions, SessionNumber);
+			if (!SessionNumber) SetFileTitle();
+			Tibia::AutoPlay();
 		}
 		MainWnd::Progress_Stop();
 	}
