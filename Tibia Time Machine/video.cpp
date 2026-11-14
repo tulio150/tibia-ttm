@@ -92,6 +92,14 @@ namespace Video {
 		}
 	}
 
+	VOID Unload() {
+		Packet* Next;
+		do {
+			Next = CurrentLogin->Last->Next;
+			delete CurrentLogin;
+		} while (Current = Next);
+	}
+
 	VOID SaveTTM() {
 		BufferedFile File(FileName);
 		File.Write(Tibia::Version);
@@ -452,7 +460,7 @@ namespace Video {
 		File.Save();
 	}
 
-	WORD GuessVersion(CONST PacketData& Src) { // Timestamps from TibiaRC - need checking
+	WORD GuessVersion(CONST PacketData& Src) { // Timestamps idea from TibiaRC
 		if (Src.Size > 50) for (WORD i = Src.Size - 50; i--;) {
 			if (Src.Data[i] == 0xB4 && !DiffMemory(Src.Data + i + 4, "Your last visit in Tibia: ", 26)) {
 				if (*(WORD*)(Src.Data + i + 2) < 39) return 0;
@@ -487,46 +495,7 @@ namespace Video {
 				default: return 0;
 				}
 				if (!AreCharDigits(4, Split4(Msg, 4, 5, 6, 7))) return 0;
-				CONST DWORD Timestamp = DecimalChars(4, Split4(Msg, 4, 5, 6, 7)) * 10000 + Mon * 100 + Day;
-				if (Timestamp >= 20100922) return 862;
-				if (Timestamp >= 20100823) return 861;
-				if (Timestamp >= 20100630) return 860;
-				if (Timestamp >= 20100506) return 857;
-				if (Timestamp >= 20100505) return 856;
-				if (Timestamp >= 20100317) return 855;
-				if (Timestamp >= 20090912) return 854;
-				if (Timestamp >= 20091105) return 853;
-				if (Timestamp >= 20091001) return 852;
-				if (Timestamp >= 20090701) return 850;
-				if (Timestamp >= 20090422) return 842;
-				if (Timestamp >= 20090318) return 841;
-				if (Timestamp >= 20081210) return 840;
-				if (Timestamp >= 20081001) return 831;
-				if (Timestamp >= 20080930) return 830;
-				if (Timestamp >= 20080812) return 822;
-				if (Timestamp >= 20080724) return 821;
-				if (Timestamp >= 20080702) return 820;
-				if (Timestamp >= 20080408) return 811;
-				if (Timestamp >= 20070626) return 800;
-				if (Timestamp >= 20070108) return 792;
-				if (Timestamp >= 20061212) return 790;
-				if (Timestamp >= 20060829) return 781;
-				if (Timestamp >= 20060801) return 780;
-				if (Timestamp >= 20060608) return 772;
-				if (Timestamp >= 20060517) return 770;
-				if (Timestamp >= 20051212) return 760;
-				if (Timestamp >= 20051116) return 755;
-				if (Timestamp >= 20050809) return 750;
-				if (Timestamp >= 20050707) return 741;
-				if (Timestamp >= 20041210) return 740;
-				if (Timestamp >= 20041108) return 730;
-				if (Timestamp >= 20040722) return 727;
-				if (Timestamp >= 20040504) return 726;
-				if (Timestamp >= 20040314) return 724;
-				if (Timestamp >= 20040309) return 723;
-				if (Timestamp >= 20040121) return 721;
-				if (Timestamp >= 20040727) return 711;
-				if (Timestamp >= 20040828) return 700;
+				return Tibia::VersionAt(DecimalChars(4, Split4(Msg, 4, 5, 6, 7)) * 10000 + Mon * 100 + Day);
 			}
 		}
 		return 0;
@@ -575,18 +544,24 @@ namespace Video {
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
 			WORD Guessed = GuessVersion(*&*Started());
-			if (!Guessed || Override) {
-				if (Guessed) {
-					Tibia::Version = Guessed;
-				}
+			if (Guessed < 700 || Override) {
+				if (Guessed) Tibia::Version = Guessed;
 				MainWnd::Progress_Pause();
 				if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
 					Tibia::SetVersionString(Tibia::Version);
+					Override = FALSE;
 				}
 			}
 			else {
 				Tibia::SetVersionString(Tibia::Version = Guessed);
 			}
+		}
+		else if (!Override && Tibia::Version != GuessVersion(*&*Started())) {
+			Current->EndSession();
+			Current = Started();
+			Started() = NULL;
+			Unload();
+			throw ERROR_WRONG_VERSION;
 		}
 	}
 
@@ -631,13 +606,6 @@ namespace Video {
 		LastTimeChanged();
 	}
 
-	VOID Unload() {
-		Packet* Next;
-		do {
-			Next = CurrentLogin->Last->Next;
-			delete CurrentLogin;
-		} while (Current = Next);
-	}
 	VOID CancelOpen(CONST BOOL Override) {
 		if (Packet*& Start = Started()) {
 			if (Override) {

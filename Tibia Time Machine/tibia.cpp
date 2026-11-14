@@ -1154,4 +1154,97 @@ namespace Tibia {
 		SendMessageTimeout(Wnd, WM_CHAR, VK_ESCAPE, 1, SMTO_BLOCK, 1000, NULL);
 		RedrawWindow(Wnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 	}
+
+	WORD VersionAt(CONST DWORD Timestamp) {
+		if (Timestamp >= 20130605) return 1000;
+		if (Timestamp >= 20130422) return 986;
+		if (Timestamp >= 20130411) return 985;
+		if (Timestamp >= 20130404) return 984;
+		if (Timestamp >= 20130314) return 983;
+		if (Timestamp >= 20121212) return 980;
+		if (Timestamp >= 20121108) return 971;
+		if (Timestamp >= 20121010) return 970;
+		if (Timestamp >= 20120829) return 963; // same date as 962
+		if (Timestamp >= 20120711) return 960;
+		if (Timestamp >= 20120613) return 954;
+		if (Timestamp >= 20120503) return 953;
+		if (Timestamp >= 20120413) return 952;
+		if (Timestamp >= 20120405) return 951;
+		if (Timestamp >= 20120403) return 950;
+		if (Timestamp >= 20120323) return 946;
+		if (Timestamp >= 20120322) return 945;
+		if (Timestamp >= 20120113) return 944;
+		if (Timestamp >= 20120104) return 943;
+		if (Timestamp >= 20111229) return 942;
+		if (Timestamp >= 20111220) return 941;
+		if (Timestamp >= 20111214) return 940;
+		if (Timestamp >= 20111020) return 931;
+		if (Timestamp >= 20110706) return 910;
+		if (Timestamp >= 20110609) return 900;
+		if (Timestamp >= 20110512) return 874;
+		if (Timestamp >= 20110504) return 873;
+		if (Timestamp >= 20110420) return 872;
+		if (Timestamp >= 20110127) return 871;
+		if (Timestamp >= 20101208) return 870;
+		if (Timestamp >= 20100922) return 862;
+		if (Timestamp >= 20100823) return 861;
+		if (Timestamp >= 20100630) return 860;
+		if (Timestamp >= 20100506) return 857;
+		if (Timestamp >= 20100505) return 856;
+		if (Timestamp >= 20100317) return 855;
+		if (Timestamp >= 20091209) return 854;
+		if (Timestamp >= 20091105) return 853;
+		if (Timestamp >= 20091001) return 852; // same date as 851
+		if (Timestamp >= 20090701) return 850;
+		if (Timestamp >= 20090422) return 842;
+		if (Timestamp >= 20090318) return 841;
+		if (Timestamp >= 20081210) return 840;
+		if (Timestamp >= 20081001) return 831;
+		if (Timestamp >= 20080930) return 830;
+		if (Timestamp >= 20080812) return 822;
+		if (Timestamp >= 20080724) return 821;
+		if (Timestamp >= 20080702) return 820;
+		if (Timestamp >= 20080408) return 811;
+		if (Timestamp >= 20071211) return 810;
+		if (Timestamp >= 20070626) return 800;
+		if (Timestamp >= 20070108) return 792;
+		if (Timestamp >= 20061212) return 790;
+		if (Timestamp >= 20061013) return 782;
+		if (Timestamp >= 20060829) return 781;
+		if (Timestamp >= 20060801) return 780;
+		if (Timestamp >= 20060608) return 772;
+		if (Timestamp >= 20060531) return 770;
+		if (Timestamp >= 20060517) return 770;
+		if (Timestamp >= 20060505) return 761;
+		if (Timestamp >= 20051212) return 760;
+		if (Timestamp >= 20051116) return 755;
+		if (Timestamp >= 20050809) return 750;
+		if (Timestamp >= 20050607) return 741;
+		if (Timestamp >= 20041214) return 740;
+		if (Timestamp >= 20041210) return 735;
+		if (Timestamp >= 20040811) return 730;
+		if (Timestamp >= 20040722) return 727;
+		if (Timestamp >= 20040504) return 726;
+		if (Timestamp >= 20040314) return 724;
+		if (Timestamp >= 20040309) return 723;
+		if (Timestamp >= 20040121) return 721;
+		if (Timestamp >= 20031216) return 720;
+		if (Timestamp >= 20031208) return 713;
+		if (Timestamp >= 20030627) return 711;
+		if (Timestamp >= 20021217) return 710;
+		if (Timestamp >= 20021121) return 703; // client version 7.02
+		if (Timestamp >= 20021022) return 702; // client version 7.01
+		if (Timestamp >= 20020828) return 700;
+		if (Timestamp >= 20020823) return 698;
+		if (Timestamp >= 20020821) return 697;
+		if (Timestamp >= 20020220) return 661;
+		if (Timestamp >= 20020218) return 660;
+		if (Timestamp >= 20011219) return 650;
+		if (Timestamp >= 20011102) return 640;
+		if (Timestamp >= 20010924) return 630;
+		if (Timestamp >= 20010610) return 620;
+		if (Timestamp >= 20001223) return 610;
+		if (Timestamp >= 20001103) return 600;
+		return 0;
+	}
 }

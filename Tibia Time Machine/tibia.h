@@ -70,4 +70,6 @@ namespace Tibia {
 	VOID Unlock();
 	VOID Redraw();
 	VOID CloseDialogs();
+
+	WORD VersionAt(CONST DWORD Timestamp);
 }
