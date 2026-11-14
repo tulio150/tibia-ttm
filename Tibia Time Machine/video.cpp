@@ -522,7 +522,13 @@ namespace Video {
 		}
 		DWORD Packets = File.Read<DWORD>();
 		Converter Src;
-		if (Encryption == 2) {
+		if (Encryption < 2) for (DWORD i = 0; i < Packets; i++) {
+			CONST DWORD Size = File.Read<DWORD>();
+			File.Read(Src.Time);
+			Src.Read(File.Skip(Size), Size);
+			MainWnd::Progress_Set(i, Packets);
+		}
+		else {
 			if (Packets < 58) throw ERROR_CORRUPT_VIDEO;
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
@@ -541,19 +547,9 @@ namespace Video {
 				CONST LPBYTE Data = File.Skip(Size);
 				if (File.Read<DWORD>() != adler32(1, Data, Size) && !Override) throw bad_read();
 				CHAR Key = Size + Src.Time - 31, Rem;
-				for (DWORD i = 0; i < Size; i++) {
-					Data[i] += ((Rem = (Key += 33) % Mod) > 0 ? Rem - Mod : Rem) - Key;
-				}
+				for (DWORD i = 0; i < Size; i++) Data[i] += ((Rem = (Key += 33) % Mod) > 0 ? Rem - Mod : Rem) - Key;
 				if (RecVersion > 4 && !CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Size)) throw bad_read();
 				Src.Read(Data, Size);
-				MainWnd::Progress_Set(i, Packets);
-			}
-		}
-		else {
-			for (DWORD i = 0; i < Packets; i++) {
-				CONST DWORD Size = File.Read<DWORD>();
-				File.Read(Src.Time);
-				Src.Read(File.Skip(Size), Size);
 				MainWnd::Progress_Set(i, Packets);
 			}
 		}
