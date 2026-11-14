@@ -431,23 +431,84 @@ namespace Video {
 		} while (Current = Current->Next);
 		File.Save();
 	}
-	WORD GuessVersion(CONST BYTE RecVersion, CONST BYTE Encryption) {
-		switch (RecVersion) { //TODO: guess version by packet contents
-			case 2: return 700; // never found one, let's use for older-than-tibicam recordings
-			case 3:	switch (Encryption) {
-				case 1:	return 710; // no encryption
-				case 2: return 730; // encryption mod 5
+	WORD GuessVersion(CONST PacketData& Src) { // Timestamps from TibiaRC - need checking
+		if (Src.Size > 50) for (WORD i = Src.Size - 50; i--;) {
+			if (Src.Data[i] == 0xB4 && !DiffMemory(Src.Data + i + 4, "Your last visit in Tibia: ", 26)) {
+				if (*(WORD*)(Src.Data + i + 2) < 39) return 0;
+				LPCSTR Msg = LPCSTR(Src.Data + i + 30);
+				if (!IsCharDigit(Msg[0])) return 0;
+				BYTE Day = 0;
+				if (Msg[1] == '.') {
+					Day = CharToDigit(Msg[0]);
+					Msg += 3;
+				}
+				else if (Msg[2] == '.') {
+					if (!IsCharDigit(Msg[1])) return 0;
+					Day = DecimalChars(2, Split2(Msg, 0, 1));
+					if (Day > 31) return 0;
+					Msg += 4;
+				}
+				else return 0;
+				BYTE Mon;
+				switch (*(DWORD*)Msg) {
+				case 0x206E614A: Mon = 1; break; // Jan
+				case 0x20626546: Mon = 2; break; // Feb
+				case 0x2072614D: Mon = 3; break; // Mar
+				case 0x20727041: Mon = 4; break; // Apr
+				case 0x2079614D: Mon = 5; break; // May
+				case 0x206E754A: Mon = 6; break; // Jun
+				case 0x206C754A: Mon = 7; break; // Jul
+				case 0x20677541: Mon = 8; break; // Aug
+				case 0x20706553: Mon = 9; break; // Sep
+				case 0x2074634F: Mon = 10; break; // Oct
+				case 0x20766F4E: Mon = 11; break; // Nov
+				case 0x20636544: Mon = 12; break; // Dec
+				default: return 0;
+				}
+				if (!AreCharDigits(4, Split4(Msg, 4, 5, 6, 7))) return 0;
+				CONST DWORD Timestamp = DecimalChars(4, Split4(Msg, 4, 5, 6, 7)) * 10000 + Mon * 100 + Day;
+				if (Timestamp >= 20100922) return 862;
+				if (Timestamp >= 20100823) return 861;
+				if (Timestamp >= 20100630) return 860;
+				if (Timestamp >= 20100506) return 857;
+				if (Timestamp >= 20100505) return 856;
+				if (Timestamp >= 20100317) return 855;
+				if (Timestamp >= 20090912) return 854;
+				if (Timestamp >= 20091105) return 853;
+				if (Timestamp >= 20091001) return 852;
+				if (Timestamp >= 20090701) return 850;
+				if (Timestamp >= 20090422) return 842;
+				if (Timestamp >= 20090318) return 841;
+				if (Timestamp >= 20081210) return 840;
+				if (Timestamp >= 20081001) return 831;
+				if (Timestamp >= 20080930) return 830;
+				if (Timestamp >= 20080812) return 822;
+				if (Timestamp >= 20080724) return 821;
+				if (Timestamp >= 20080702) return 820;
+				if (Timestamp >= 20080408) return 811;
+				if (Timestamp >= 20070626) return 800;
+				if (Timestamp >= 20070108) return 792;
+				if (Timestamp >= 20061212) return 790;
+				if (Timestamp >= 20060829) return 781;
+				if (Timestamp >= 20060801) return 780;
+				if (Timestamp >= 20060608) return 772;
+				if (Timestamp >= 20060517) return 770;
+				if (Timestamp >= 20051212) return 760;
+				if (Timestamp >= 20051116) return 755;
+				if (Timestamp >= 20050809) return 750;
+				if (Timestamp >= 20050707) return 741;
+				if (Timestamp >= 20041210) return 740;
+				if (Timestamp >= 20041108) return 730;
+				if (Timestamp >= 20040722) return 727;
+				if (Timestamp >= 20040504) return 726;
+				if (Timestamp >= 20040314) return 724;
+				if (Timestamp >= 20040309) return 723;
+				if (Timestamp >= 20040121) return 721;
+				if (Timestamp >= 20040727) return 711;
+				if (Timestamp >= 20040828) return 700;
 			}
-			case 4: return 770; // encryption mod 8
-			case 5: return 772; // encryption mod 8 + aes
-			case 6: return 800; // encryption mod 6 + aes
-			case 7: return 830; // versions that tibicam never supported
-			case 8: return 980; // when the enter game packet changed
-			case 9: return 1054;
-			case 10: return 1058;
-			case 11: return 1080;
 		}
-		return LATEST; //never happens
+		return 0;
 	}
 	VOID OpenREC(BOOL Override, CONST HWND Parent) {
 		MappedFile File(FileName);
@@ -456,10 +517,8 @@ namespace Video {
 		BYTE Encryption;
 		if (!File.Read(Encryption) || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
-			Tibia::SetHost(GuessVersion(RecVersion, Encryption), NULL, LPCTSTR(NULL), PORT);
-			MainWnd::Progress_Pause();
-			if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) throw ERROR_TIBICAM_VERSION;
-			MainWnd::Progress_Start();
+			CONST WORD Versions[] = { 700, WORD(Encryption < 2 ? 710 : 730), 770, 772, 800, 830, 980, 1054, 1058, 1080, LATEST };
+			Tibia::SetHost(Versions[RecVersion < 12 ? RecVersion - 2 : 10], NULL, LPCTSTR(NULL), PORT); // To start parser with a base version guess
 		}
 		DWORD Packets = File.Read<DWORD>();
 		Converter Src;
@@ -468,12 +527,12 @@ namespace Video {
 			Packets -= 57;
 			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
 			if (RecVersion > 4 && !RecKey) {
-				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw bad_alloc();
+				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw ERROR_CANNOT_OPEN_VIDEO_FILE;
 				CONST DWORD AesMode = CRYPT_MODE_ECB;
 				if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
 					CryptDestroyKey(RecKey);
 					RecKey = NULL;
-					throw bad_alloc();
+					throw ERROR_CANNOT_OPEN_VIDEO_FILE;
 				}
 			}
 			for (DWORD i = 0; i < Packets; i++) {
@@ -499,6 +558,21 @@ namespace Video {
 			}
 		}
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
+		if (!Last && !Tibia::Running) {
+			WORD Guessed = GuessVersion(*&*Started());
+			if (!Guessed || Override) {
+				if (Guessed) {
+					Tibia::Version = Guessed;
+				}
+				MainWnd::Progress_Pause();
+				if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
+					Tibia::SetVersionString(Tibia::Version);
+				}
+			}
+			else {
+				Tibia::SetVersionString(Tibia::Version = Guessed);
+			}
+		}
 	}
 
 	VOID FillSessionList() {
@@ -703,9 +777,6 @@ namespace Video {
 				CopyMemory(ErrorString + Pos, ErrorFile, TLEN(FileSize));
 				ErrorString[(Pos += FileSize)++] = '\n';
 				Pos += LoadString(NULL, Error, ErrorString + Pos, 900 - Pos);
-				if (Error == ERROR_TIBICAM_VERSION) {
-					break;
-				}
 			}
 			else {
 				SHAddToRecentDocs(SHARD_PATH, FileName);
@@ -751,8 +822,8 @@ namespace Video {
 							TCHAR ErrorString[200];
 							LoadString(NULL, Error, ErrorString, 200);
 							MessageBox(Dialog, ErrorString, Info->lpstrTitle, MB_ICONSTOP);
-							MainWnd::Progress_Stop();
 							if (!Last) {
+								MainWnd::Progress_Stop();
 								SetWindowLongPtr(Dialog, DWLP_MSGRESULT, TRUE);
 								return TRUE;
 							}
