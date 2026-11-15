@@ -138,9 +138,10 @@ namespace MainWnd {
 	}
 	VOID Progress_Set(DWORD Set, DWORD End) {
 		if (TaskbarButton) {
+			if (!End) End = 1;
 			Set += End * Progress_Segment;
 			End *= Progress_Segments;
-			if (End >= 100) {
+			if (End > 100) {
 				Set /= End / 100;
 				End = 100;
 			}

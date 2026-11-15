@@ -28,11 +28,6 @@ namespace Video {
 	CONST TCHAR SpeedLabel[][6] = { _T(" x2"), _T(" x4"), _T(" x8"), _T(" x16"), _T(" x32"), _T(" x64"), _T(" x128"), _T(" x256"), _T(" x512") };
 
 	HCRYPTKEY RecKey = NULL;
-	static const struct AES256KEYBLOB {
-		BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
-		DWORD Size = 32;
-		BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
-	} RecBlob;
 
 #define CurrentLogin ((Session *) Current)
 
@@ -92,14 +87,6 @@ namespace Video {
 		}
 	}
 
-	VOID Unload() {
-		Packet* Next;
-		do {
-			Next = CurrentLogin->Last->Next;
-			delete CurrentLogin;
-		} while (Current = Next);
-	}
-
 	VOID SaveTTM() {
 		BufferedFile File(FileName);
 		File.Write(Tibia::Version);
@@ -127,12 +114,12 @@ namespace Video {
 		File.Save();
 	}
 
-	VOID BeforeOpen(BOOL &Override, CONST HWND Parent, CONST WORD Version, CONST BYTE HostLen, CONST LPCSTR Host, CONST WORD Port) {
+	VOID BeforeOpen(BOOL& Override, CONST HWND Parent, CONST WORD Version, CONST BYTE HostLen, CONST LPCSTR Host, CONST WORD Port) {
 		if (HostLen) {
 			if (!Port || HostLen > 127 || !Tibia::VerifyHost(Host, HostLen)) throw ERROR_CORRUPT_VIDEO;
 		}
-		if (Override) {
-			if (!Last && !Tibia::Running) {
+		if (!Last && !Tibia::Running) {
+			if (Override) {
 				Tibia::SetHost(Version, HostLen, Host, Port);
 				MainWnd::Progress_Pause();
 				if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {
@@ -144,23 +131,88 @@ namespace Video {
 					Override = FALSE;
 				}
 				MainWnd::Progress_Start();
+
 			}
-		}
-		else {
-			if (!Last && !Tibia::Running) {
+			else {
 				if (Version < 700 || Version > LATEST) {
 					throw ERROR_UNSUPPORTED_TIBIA_VERSION;
 				}
 				Tibia::SetHost(Version, HostLen, Host, Port);
 				Tibia::SetVersionString(Version);
 			}
+		}
+		else if (!Override) {
+			if (Tibia::Version != Version) {
+				throw ERROR_WRONG_VERSION;
+			}
+			if (Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen)) {
+				throw ERROR_WRONG_HOST;
+			}
+		}
+	}
+
+	VOID FillSessionList() {
+		Current = First;
+		do {
+			ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
+		} while (Current = CurrentLogin->Last->Next);
+	}
+	VOID LastTimeChanged() {
+		MainWnd::ScrollInfo.nMax = Last->Time / 1000 + 59;
+	}
+	VOID AfterOpen(BOOL Override) {
+		Current->EndSession();
+		if (Last) {
+			INT NewSession = ListBox_GetCount(MainWnd::ListSessions);
+			SetWindowRedraw(MainWnd::ListSessions, FALSE);
+			while (Current = Last->Next) {
+				ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
+				Last = CurrentLogin->Last;
+			}
+			SetWindowRedraw(MainWnd::ListSessions, TRUE);
+			ListBox_SetCurSel(MainWnd::ListSessions, NewSession);
+			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
+			Changed = TRUE;
+		}
+		else {
+			Last = Current;
+			Tibia::OpenVersionMenu();
+			SetWindowRedraw(MainWnd::ListSessions, FALSE);
+			FillSessionList();
+			SetWindowRedraw(MainWnd::ListSessions, TRUE);
+			ListBox_SetCurSel(MainWnd::ListSessions, 0);
+			TCHAR LabelString[40];
+			LoadString(NULL, LABEL_TOTAL_TIME, LabelString, 40);
+			Static_SetText(MainWnd::LabelTime, LabelString);
+			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
+			LoadString(NULL, BUTTON_SAVE, LabelString, 40);
+			Button_SetText(MainWnd::ButtonSub, LabelString);
+			Changed = Override;
+		}
+		LastTimeChanged();
+	}
+
+	VOID Unload() {
+		Packet* Next;
+		do {
+			Next = CurrentLogin->Last->Next;
+			delete CurrentLogin;
+		} while (Current = Next);
+	}
+
+	Packet*& Started() {
+		return Last ? Last->Next : First;
+	}
+	VOID CancelOpen(CONST BOOL Override) {
+		if (Packet*& Start = Started()) {
+			if (Override) {
+				AfterOpen(TRUE);
+			}
 			else {
-				if (Tibia::Version != Version) {
-					throw ERROR_WRONG_VERSION;
-				}
-				if (Tibia::HostLen != HostLen || DiffMemory(Tibia::Host, Host, HostLen)) {
-					throw ERROR_WRONG_HOST;
-				}
+				Current->EndSession();
+				Current = Start;
+				Start = NULL;
+				Unload();
 			}
 		}
 	}
@@ -216,7 +268,7 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Current->Time, TotalTime);
 		}
-		if (Current->Time != TotalTime && !Override) throw bad_read();
+		if (Current->Time != TotalTime) throw bad_read();
 	}
 
 	BYTE RECVersion() {
@@ -247,50 +299,30 @@ namespace Video {
 		File.Write(Packets);
 		Current = First;
 		do {
-			File.Write(WORD(Size = (*Current)->RawSize()));
+			File.Write(WORD(Size = (*Current)->RawSize())); // Some players use this, but it can overflow
 			File.Write(Current->Time);
 			File.Write(&(*Current), Size);
-			File.Write(crc32(0, (*Current)->Data, (*Current)->Size));
+			File.Write(crc32(0, (*Current)->Data, (*Current)->Size)); // Some players check this
 			MainWnd::Progress_Set(Current->Time, Last->Time);
 		} while (Current = Current->Next);
 		File.Save(CAMProgressCallback);
 	}
+	
+	struct VideoLoader : public FilePacket {
+		DWORD Time;
+		DWORD LastTime;
 
-	Packet*& Started() {
-		return Last ? Last->Next : First;
-	}
-	VOID OpenCAM(BOOL& Override, CONST HWND Parent) {
-		LzmaMappedFile File(FileName);
-		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
-		CONST LPCBYTE Version = File.Skip(4);
-		if (Version[0] > 99 || Version[1] > 9 || Version[2] > 9 || Version[3]) throw ERROR_CORRUPT_VIDEO;
-		BYTE HostLen = NULL;
-		LPCSTR Host = NULL;
-		WORD Port = PORT;
-		if (DWORD Metadata = File.Read<DWORD>()) {
-			if (DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
-				File.Skip(Metadata);
+		VideoLoader() { Current = Last; }
+		VOID Read(MappedFile& File) {
+			if (!FilePacket::Read(File)) {
+				if (P->Size) throw bad_read();
+				return; // ignore zero-sized packets
 			}
-			else {
-				if (Metadata < 4 || Metadata > 130 || File.Read(HostLen) != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
-				Host = LPCSTR(File.Skip(HostLen));
-				File.Read(Port);
-			}
+			AddPacket(*&*this);
 		}
-		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
-		File.Uncompress(Override);
-		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
-		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
-		DWORD Packets;
-		if (File.Read(Packets) < 58) throw ERROR_CORRUPT_VIDEO;
-		Packets -= 57;
-		FilePacket Src; // Shortcut to read all kinds of videos, could use FilePacket
-		DWORD LastTime = 0;
-		Current = Last;
-		for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
-			File.Read<WORD>(); // Ignore this size, it can overflow
-			DWORD Time = File.Read<DWORD>();
-			if (!Src.Read(File)) throw bad_read();
+
+	protected:
+		VOID AddPacket(CONST PacketData &Src) {
 			if (Parser->EnterGame) {
 				if (Current) {
 					if (1000 > INFINITE - Current->Time) throw bad_alloc();
@@ -312,11 +344,42 @@ namespace Video {
 				}
 				Current = Current->Next = new(&Src) Packet(Current, WORD(Delay));
 			}
-			File.Read<DWORD>(); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 			LastTime = Time;
 		}
+	};
+
+	VOID OpenCAM(BOOL& Override, CONST HWND Parent) {
+		LzmaMappedFile File(FileName);
+		CONST LPCBYTE Hash = File.Skip(32); // No recorder uses this as a real hash
+		CONST LPCBYTE Version = File.Skip(4);
+		if (Version[0] > 99 || Version[1] > 9 || Version[2] > 9 || Version[3]) throw ERROR_CORRUPT_VIDEO;
+		BYTE HostLen = NULL;
+		LPCSTR Host = NULL;
+		WORD Port = PORT;
+		if (DWORD Metadata = File.Read<DWORD>()) {
+			if (DiffMemory(Hash, CAM_HASH, 32)) { // Our little mod to allow otserver info
+				File.Skip(Metadata);
+			}
+			else {
+				if (Metadata < 4 || Metadata > 130 || File.Read(HostLen) != Metadata - 3) throw ERROR_CORRUPT_VIDEO;
+				Host = LPCSTR(File.Skip(HostLen));
+				File.Read(Port);
+			}
+		}
+		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
+		File.Uncompress();
+		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
+		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
+		CONST DWORD Packets = File.Read<DWORD>();
+		VideoLoader Src;
+		for (DWORD i = 0; File.Peek(); MainWnd::Progress_Set(++i, Packets)) { // some recorders record the wrong packet number
+			File.Read<WORD>(); // Ignore this size, it can overflow
+			File.Read(Src.Time);
+			Src.Read(File);
+			if (!File.Peek()) break; // some files don't have the checksum of the last packet
+			File.Read<DWORD>(); // Ignore checksum, some recorders misuse it (LZMA already checksums)
+		}
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
-		if (File.Peek() && !Override) throw bad_read();
 	}
 
 	VOID SaveTMV() {
@@ -324,8 +387,8 @@ namespace Video {
 		File.Write(WORD(2)); // Tibiamovie file version (ignored by original player)
 		File.Write(Tibia::Version);
 		File.Write(Last->Time);
-		Current = First;
 		DWORD LastTime = 0;
+		Current = First;
 		do {
 			if (Current == Current->Login) File.Write(BYTE(TRUE)); // I'm adding markers to the starts of the sessions
 			File.Write(BYTE(FALSE));
@@ -349,20 +412,14 @@ namespace Video {
 		File.Save();
 	}
 
-	class Converter : private FilePacket {
+	class Converter : public VideoLoader {
 		WORD PacketSize;
 		WORD Want;
 		LPBYTE Store;
-		DWORD LastTime;
-	public:
-		DWORD Time;
 
-		Converter() : Store(LPBYTE(&PacketSize)), Want(2) {
-			Current = Last;
-		}
-		~Converter() {
-			Parser->DestroyPacket(P);
-		}
+	public:
+		Converter() : Store(LPBYTE(&PacketSize)), Want(2) { }
+		~Converter() { Parser->DestroyPacket(P); }
 		VOID Read(LPCBYTE Data, DWORD Avail) {
 			while (Avail >= Want) {
 				CopyMemory(Store, Data, Want);
@@ -381,30 +438,9 @@ namespace Video {
 				}
 				else {
 					if (!Parser->GetPacketType()) throw bad_read();
-					if (Parser->EnterGame) {
-						if (Current) {
-							if (1000 > INFINITE - Current->Time) throw bad_alloc();
-							Current->EndSession();
-							Current = Current->Next = new(P) Session(Current);
-						}
-						else {
-							Current = First = new(P) Session();
-						}
-					}
-					else if (!Parser->Pending && !Parser->PlayerData) { // pending packet should not exist here, but who knwows
-						if (!Started()) throw ERROR_CORRUPT_VIDEO; // common packet without a login packet first (usually wrong version selected)
-						DWORD Delay = Time - LastTime;
-						if (Delay > BIGDELAY) {
-							Delay = BIGDELAY;
-						}
-						if (Delay > INFINITE - Current->Time) {
-							Delay = INFINITE - Current->Time;
-						}
-						Current = Current->Next = new(P) Packet(Current, WORD(Delay));
-					}
+					AddPacket(*P);
 					Parser->DestroyPacket(P);
 					P = NULL;
-					LastTime = Time;
 					Store = LPBYTE(&PacketSize);
 					Want = 2;
 				}
@@ -416,6 +452,7 @@ namespace Video {
 			}
 		}
 	};
+
 	VOID OpenTMV(BOOL &Override, CONST HWND Parent) {
 		GzipMappedFile File(FileName);
 		if (File.Read<WORD>() != 2) throw ERROR_CORRUPT_VIDEO;
@@ -437,8 +474,8 @@ namespace Video {
 			}
 			MainWnd::Progress_Set(Src.Time, TotalTime);
 		}
-		if (Src.Time != TotalTime && !Override) throw bad_read();
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
+		if (Src.Time != TotalTime) throw bad_read();
 	}
 
 	VOID SaveREC() {
@@ -468,11 +505,13 @@ namespace Video {
 				if (!IsCharDigit(Msg[0])) return 0;
 				BYTE Day = 0;
 				if (Msg[1] == '.') {
+					if (Msg[2] != ' ') return 0;
 					Day = CharToDigit(Msg[0]);
 					Msg += 3;
 				}
 				else if (Msg[2] == '.') {
 					if (!IsCharDigit(Msg[1])) return 0;
+					if (Msg[3] != ' ') return 0;
 					Day = DecimalChars(2, Split2(Msg, 0, 1));
 					if (Day > 31) return 0;
 					Msg += 4;
@@ -502,48 +541,57 @@ namespace Video {
 	}
 	VOID OpenREC(BOOL &Override, CONST HWND Parent) {
 		MappedFile File(FileName);
-		BYTE RecVersion;
-		if (File.Read(RecVersion) < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
-		BYTE Encryption;
-		if (!File.Read(Encryption) || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
+		CONST BYTE Version = File.Read<BYTE>();
+		if (Version < 2) throw ERROR_CORRUPT_VIDEO; // we are supporting more versions than tibicam itself
+		CONST BYTE Encryption = File.Read<BYTE>();
+		if (!Encryption || Encryption > 2) throw ERROR_CORRUPT_VIDEO;
+		DWORD Packets = File.Read<DWORD>();
 		if (!Last && !Tibia::Running) {
 			CONST WORD Versions[] = { 700, WORD(Encryption < 2 ? 710 : 730), 770, 772, 800, 830, 980, 1054, 1058, 1080, LATEST };
-			Tibia::SetHost(Versions[RecVersion < 12 ? RecVersion - 2 : 10], NULL, LPCTSTR(NULL), PORT); // To start parser with a base version guess
+			Tibia::SetHost(Versions[Version < 12 ? Version - 2 : 10], NULL, LPCTSTR(NULL), PORT); // To start parser with a base version guess
+			Tibia::SetVersionString(Tibia::Version);
 		}
-		DWORD Packets = File.Read<DWORD>();
-		Converter Src;
-		if (Encryption < 2) for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
-			CONST DWORD Size = File.Read<DWORD>();
-			File.Read(Src.Time);
-			Src.Read(File.Skip(Size), Size);
-		}
-		else {
-			if (Packets < 58) throw ERROR_CORRUPT_VIDEO;
-			Packets -= 57;
-			CHAR Mod = RecVersion < 4 ? 5 : RecVersion < 6 ? 8 : 6;
-			if (RecVersion > 4 && !RecKey) {
-				if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw ERROR_CANNOT_OPEN_VIDEO_FILE;
-				CONST DWORD AesMode = CRYPT_MODE_ECB;
-				if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
-					CryptDestroyKey(RecKey);
-					RecKey = NULL;
-					throw ERROR_CANNOT_OPEN_VIDEO_FILE;
+		try {
+			Converter Src;
+			if (Encryption < 2) for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
+				CONST DWORD Size = File.Read<DWORD>();
+				File.Read(Src.Time);
+				Src.Read(File.Skip(Size), Size);
+			}
+			else {
+				if (Packets < 58) throw ERROR_CORRUPT_VIDEO;
+				Packets -= 57;
+				if (Version > 4 && !RecKey) {
+					static const struct {
+						BLOBHEADER Header = { PLAINTEXTKEYBLOB, CUR_BLOB_VERSION, NULL, CALG_AES_256 };
+						DWORD Size = 32;
+						BYTE Key[33] = "Thy key is mine © 2006 GB Monaco";
+					} RecBlob;
+					if (!CryptImportKey(WinCrypt, LPCBYTE(&RecBlob), sizeof(RecBlob), NULL, NULL, &RecKey)) throw ERROR_CANNOT_OPEN_VIDEO_FILE;
+					CONST DWORD AesMode = CRYPT_MODE_ECB;
+					if (!CryptSetKeyParam(RecKey, KP_MODE, LPCBYTE(&AesMode), NULL)) {
+						CryptDestroyKey(RecKey);
+						RecKey = NULL;
+						throw ERROR_CANNOT_OPEN_VIDEO_FILE;
+					}
+				}
+				CONST CHAR Mod = Version < 4 ? 5 : Version < 6 ? 8 : 6;
+				for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
+					DWORD Size = File.Read<WORD>();
+					File.Read(Src.Time);
+					CONST LPBYTE Data = File.Skip(Size);
+					if (File.Read<DWORD>() != adler32(1, Data, Size) && !Override) break;
+					CHAR Key = Size + Src.Time - 31, Rem;
+					for (DWORD i = 0; i < Size; i++) Data[i] += ((Rem = (Key += 33) % Mod) > 0 ? Rem - Mod : Rem) - Key;
+					if (Version > 4 && !CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Size)) break;
+					Src.Read(Data, Size);
 				}
 			}
-			for (DWORD i = 0; i < Packets; MainWnd::Progress_Set(++i, Packets)) {
-				DWORD Size = File.Read<WORD>();
-				File.Read(Src.Time);
-				CONST LPBYTE Data = File.Skip(Size);
-				if (File.Read<DWORD>() != adler32(1, Data, Size) && !Override) throw bad_read();
-				CHAR Key = Size + Src.Time - 31, Rem;
-				for (DWORD i = 0; i < Size; i++) Data[i] += ((Rem = (Key += 33) % Mod) > 0 ? Rem - Mod : Rem) - Key;
-				if (RecVersion > 4 && !CryptDecrypt(RecKey, NULL, TRUE, NULL, Data, &Size)) throw bad_read();
-				Src.Read(Data, Size);
-			}
 		}
+		catch (bad_read&) { } // truncated rec files are very common, accept them
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
-			WORD Guessed = GuessVersion(*&*Started());
+			CONST WORD Guessed = GuessVersion(*&*Started());
 			if (!Guessed || Override) {
 				if (Guessed) Tibia::Version = Guessed;
 				MainWnd::Progress_Pause();
@@ -557,66 +605,8 @@ namespace Video {
 			}
 		}
 		else if (!Override && Tibia::Version != GuessVersion(*&*Started())) {
-			Current->EndSession();
-			Current = Started();
-			Started() = NULL;
-			Unload();
+			CancelOpen(FALSE);
 			throw ERROR_WRONG_VERSION;
-		}
-	}
-
-	VOID FillSessionList() {
-		Current = First;
-		do {
-			ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
-		} while (Current = CurrentLogin->Last->Next);
-	}
-	VOID LastTimeChanged() {
-		MainWnd::ScrollInfo.nMax = Last->Time / 1000 + 59;
-	}
-	VOID AfterOpen(BOOL Override) {
-		Current->EndSession();
-		if (Last) {
-			INT NewSession = ListBox_GetCount(MainWnd::ListSessions);
-			SetWindowRedraw(MainWnd::ListSessions, FALSE);
-			while (Current = Last->Next) {
-				ListBox_SetItemData(MainWnd::ListSessions, ListBox_AddString(MainWnd::ListSessions, TimeStr::Set(ListBox_GetCount(MainWnd::ListSessions), CurrentLogin->SessionTime(), CurrentLogin->Last->Time)), Current);
-				Last = CurrentLogin->Last;
-			}
-			SetWindowRedraw(MainWnd::ListSessions, TRUE);
-			ListBox_SetCurSel(MainWnd::ListSessions, NewSession);
-			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
-			Changed = TRUE;
-		}
-		else {
-			Last = Current;
-			Tibia::OpenVersionMenu();
-			SetWindowRedraw(MainWnd::ListSessions, FALSE);
-			FillSessionList();
-			SetWindowRedraw(MainWnd::ListSessions, TRUE);
-			ListBox_SetCurSel(MainWnd::ListSessions, 0);
-			TCHAR LabelString[40];
-			LoadString(NULL, LABEL_TOTAL_TIME, LabelString, 40);
-			Static_SetText(MainWnd::LabelTime, LabelString);
-			Static_SetText(MainWnd::StatusTime, TimeStr::Time);
-			LoadString(NULL, BUTTON_SAVE, LabelString, 40);
-			Button_SetText(MainWnd::ButtonSub, LabelString);
-			Changed = Override;
-		}
-		LastTimeChanged();
-	}
-
-	VOID CancelOpen(CONST BOOL Override) {
-		if (Packet*& Start = Started()) {
-			if (Override) {
-				AfterOpen(TRUE);
-			}
-			else {
-				Current->EndSession();
-				Current = Start;
-				Start = NULL;
-				Unload();
-			}
 		}
 	}
 
