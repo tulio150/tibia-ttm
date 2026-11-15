@@ -544,7 +544,7 @@ namespace Video {
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
 		if (!Last && !Tibia::Running) {
 			WORD Guessed = GuessVersion(*&*Started());
-			if (Guessed < 700 || Override) {
+			if (!Guessed || Override) {
 				if (Guessed) Tibia::Version = Guessed;
 				MainWnd::Progress_Pause();
 				if (!Loader().Run(Parent, TITLE_LOADER_OVERRIDE)) {

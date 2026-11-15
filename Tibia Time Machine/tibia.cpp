@@ -1156,11 +1156,30 @@ namespace Tibia {
 	}
 
 	WORD VersionAt(CONST DWORD Timestamp) {
+		if (Timestamp >= 20170321) return LATEST;
+		if (Timestamp >= 20161206) return 1102;
+		if (Timestamp >= 20160913) return 1098;
+		if (Timestamp >= 20160830) return 1097;
+		if (Timestamp >= 20160712) return 1096;
+		if (Timestamp >= 20160614) return 1095;
+		if (Timestamp >= 20160531) return 1094;
+		if (Timestamp >= 20160412) return 1092;
+		if (Timestamp >= 20151208) return 1090;
+		if (Timestamp >= 20150721) return 1080;
+		if (Timestamp >= 20141210) return 1070;
+		if (Timestamp >= 20140707) return 1050;
+		if (Timestamp >= 20140520) return 1040;
+		if (Timestamp >= 20131211) return 1030;
+		if (Timestamp >= 20130918) return 1020;
+		if (Timestamp >= 20130717) return 1010;
+		if (Timestamp >= 20130619) return 1002;
+		if (Timestamp >= 20130612) return 1001;
 		if (Timestamp >= 20130605) return 1000;
 		if (Timestamp >= 20130422) return 986;
 		if (Timestamp >= 20130411) return 985;
 		if (Timestamp >= 20130404) return 984;
 		if (Timestamp >= 20130314) return 983;
+		if (Timestamp >= 20121213) return 981;
 		if (Timestamp >= 20121212) return 980;
 		if (Timestamp >= 20121108) return 971;
 		if (Timestamp >= 20121010) return 970;
@@ -1234,17 +1253,17 @@ namespace Tibia {
 		if (Timestamp >= 20021217) return 710;
 		if (Timestamp >= 20021121) return 703; // client version 7.02
 		if (Timestamp >= 20021022) return 702; // client version 7.01
-		if (Timestamp >= 20020828) return 700;
-		if (Timestamp >= 20020823) return 698;
-		if (Timestamp >= 20020821) return 697;
-		if (Timestamp >= 20020220) return 661;
-		if (Timestamp >= 20020218) return 660;
-		if (Timestamp >= 20011219) return 650;
-		if (Timestamp >= 20011102) return 640;
-		if (Timestamp >= 20010924) return 630;
-		if (Timestamp >= 20010610) return 620;
-		if (Timestamp >= 20001223) return 610;
-		if (Timestamp >= 20001103) return 600;
-		return 0;
+		return 700;
+		//if (Timestamp >= 20020828) return 700;
+		//if (Timestamp >= 20020823) return 698;
+		//if (Timestamp >= 20020821) return 697;
+		//if (Timestamp >= 20020220) return 661;
+		//if (Timestamp >= 20020218) return 660;
+		//if (Timestamp >= 20011219) return 650;
+		//if (Timestamp >= 20011102) return 640;
+		//if (Timestamp >= 20010924) return 630;
+		//if (Timestamp >= 20010610) return 620;
+		//if (Timestamp >= 20001223) return 610;
+		//if (Timestamp >= 20001103) return 600;
 	}
 }
