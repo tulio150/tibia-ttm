@@ -224,7 +224,7 @@ public:
 	inline LzmaMappedFile(CONST LPCTSTR FileName): MappedFile(FileName) { }
 
 	inline VOID Uncompress(CONST BOOL AllowTruncated) {
-		Read<DWORD>(); // very permissive about wrong sizes
+		if (Read<DWORD>() > End - Data && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size, Compressed;
 		if (!Read(Size) || Read<DWORD>() || !(Compressed = End - Data)) throw bad_read();
