@@ -235,8 +235,8 @@ namespace Video {
 			Host = LPCSTR(File.Skip(HostLen));
 			File.Read(Port);
 		}
-		DWORD TotalTime = File.Read<DWORD>();
 		BeforeOpen(Override, Parent, Version, HostLen, Host, Port);
+		DWORD TotalTime = File.Read<DWORD>();
 		FilePacket Src;
 		if (!Src.Read(File) || !Parser->PlayerData) throw ERROR_CORRUPT_VIDEO;
 		if (!Parser->EnterGame) { // videos recorded with TTM BETA between 9.80 and 10.11 may have this buggy packet: fix them
@@ -367,12 +367,13 @@ namespace Video {
 			}
 		}
 		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
-		File.Uncompress(Override);
+		File.Read<DWORD>(); // Size of the remaining of the file, should we check?
+		File.Uncompress();
 		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
 		DWORD Packets = File.Read<DWORD>();
 		if (Packets < 54) throw ERROR_CORRUPT_VIDEO;
-		Packets -= 53; // some recorders are off by 2 or 4 packets
+		Packets -= 53; // Some recorders are off by 2 or 4 packets
 		VideoLoader Src;
 		for (DWORD i = 0; File.Peek(); MainWnd::Progress_Set(++i, Packets)) {
 			File.Read<WORD>(); // Ignore this size, it can overflow

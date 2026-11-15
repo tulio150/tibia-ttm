@@ -223,17 +223,13 @@ class LzmaMappedFile : public MappedFile {
 public:
 	inline LzmaMappedFile(CONST LPCTSTR FileName): MappedFile(FileName) { }
 
-	inline VOID Uncompress(CONST BOOL AllowTruncated) {
-		if (Data + Read<DWORD>() > End && !AllowTruncated) throw bad_read(); // very permissive about wrong sizes
+	inline VOID Uncompress() {
 		CONST LPCBYTE Props = Skip(5);
 		DWORD Size, Compressed;
 		if (!Read(Size) || Read<DWORD>() || !(Compressed = End - Data)) throw bad_read();
 		MappedFile Temp(*this);
 		Realloc(Size);
-		if (LzmaUncompress(LPBYTE(Data), &Size, Temp.Skip(0), &Compressed, Props, 5)) {
-			if (!Compressed) throw bad_alloc();
-			if (!AllowTruncated) throw bad_read();
-		}
+		if (LzmaUncompress(LPBYTE(Data), &Size, Temp.Skip(0), &Compressed, Props, 5) && !Compressed) throw bad_alloc();
 		End = Data + Size;
 	}
 };
