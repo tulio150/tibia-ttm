@@ -367,16 +367,17 @@ namespace Video {
 			}
 		}
 		BeforeOpen(Override, Parent, Decimal(3, Split3(Version, 0, 1, 2)), HostLen, Host, Port);
-		File.Uncompress();
+		File.Uncompress(Override);
 		File.Read<BYTE>(); // Fake TibiCAM version, ignore it (all other CAM recorders use 6 because >822)
 		if (File.Read<BYTE>() != 2) throw ERROR_CORRUPT_VIDEO; // Fake TibiCAM encryption flag (but not really encrypted)
-		CONST DWORD Packets = File.Read<DWORD>();
+		DWORD Packets = File.Read<DWORD>();
+		if (Packets < 54) throw ERROR_CORRUPT_VIDEO;
+		Packets -= 53; // some recorders are off by 2 or 4 packets
 		VideoLoader Src;
-		for (DWORD i = 0; File.Peek(); MainWnd::Progress_Set(++i, Packets)) { // some recorders record the wrong packet number
+		for (DWORD i = 0; File.Peek(); MainWnd::Progress_Set(++i, Packets)) {
 			File.Read<WORD>(); // Ignore this size, it can overflow
 			File.Read(Src.Time);
 			Src.Read(File);
-			if (!File.Peek()) break; // some files don't have the checksum of the last packet
 			File.Read<DWORD>(); // Ignore checksum, some recorders misuse it (LZMA already checksums)
 		}
 		if (!Started()) throw ERROR_CORRUPT_VIDEO;
